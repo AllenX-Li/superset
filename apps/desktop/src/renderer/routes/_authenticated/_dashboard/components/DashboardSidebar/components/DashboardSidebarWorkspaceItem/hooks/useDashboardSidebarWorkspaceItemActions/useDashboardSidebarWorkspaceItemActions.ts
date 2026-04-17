@@ -1,7 +1,6 @@
 import { toast } from "@superset/ui/sonner";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { getDeleteFocusTargetWorkspaceId } from "renderer/routes/_authenticated/_dashboard/components/DashboardSidebar/utils/getDeleteFocusTargetWorkspaceId";
 import { getFlattenedV2WorkspaceIds } from "renderer/routes/_authenticated/_dashboard/components/DashboardSidebar/utils/getFlattenedV2WorkspaceIds";
 import { navigateToV2Workspace } from "renderer/routes/_authenticated/_dashboard/utils/workspace-navigation";
@@ -57,16 +56,6 @@ export function useDashboardSidebarWorkspaceItemActions({
 		setIsRenaming(false);
 		const trimmed = renameValue.trim();
 		if (!trimmed || trimmed === workspaceName) return;
-		try {
-			await apiTrpcClient.v2Workspace.update.mutate({
-				id: workspaceId,
-				name: trimmed,
-			});
-		} catch (error) {
-			toast.error(
-				`Failed to rename: ${error instanceof Error ? error.message : "Unknown error"}`,
-			);
-		}
 	};
 
 	const handleDelete = () => {
@@ -80,7 +69,6 @@ export function useDashboardSidebarWorkspaceItemActions({
 		setIsDeleteDialogOpen(false);
 
 		const deletePromise = (async () => {
-			await apiTrpcClient.v2Workspace.delete.mutate({ id: workspaceId });
 			removeWorkspaceFromSidebar(workspaceId);
 		})();
 

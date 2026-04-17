@@ -186,7 +186,7 @@ export function StartView() {
 							<Button
 								variant="outline"
 								size="sm"
-								onClick={() => navigate({ to: "/new-project", replace: true })}
+								onClick={handleOpenProject}
 								disabled={isPending}
 								className="text-sm"
 							>

@@ -10,7 +10,6 @@ import {
 	PromptInputProvider,
 	useProviderAttachments,
 } from "@superset/ui/ai-elements/prompt-input";
-import { useQuery } from "@tanstack/react-query";
 import type { ChatStatus } from "ai";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -21,11 +20,7 @@ import type {
 	ModelOption,
 	PermissionMode,
 } from "renderer/components/Chat/ChatInterface/types";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
-import {
-	getDesktopChatModelOptions,
-	isDesktopChatDevMode,
-} from "renderer/lib/dev-chat";
+import { getDesktopChatModelOptions } from "renderer/lib/dev-chat";
 import { posthog } from "renderer/lib/posthog";
 import { useChatPreferencesStore } from "renderer/stores/chat-preferences";
 import { useTabsStore } from "renderer/stores/tabs/store";
@@ -133,14 +128,7 @@ function useAvailableModels(): {
 	defaultModel: ModelOption | null;
 } {
 	const localModels = getDesktopChatModelOptions();
-	const { data } = useQuery({
-		queryKey: ["chat", "models"],
-		queryFn: () => apiTrpcClient.chat.getModels.query(),
-		enabled: !isDesktopChatDevMode(),
-		staleTime: Number.POSITIVE_INFINITY,
-	});
-	const models = localModels.length > 0 ? localModels : (data?.models ?? []);
-	return { models, defaultModel: models[0] ?? null };
+	return { models: localModels, defaultModel: localModels[0] ?? null };
 }
 
 function toErrorMessage(error: unknown): string | null {

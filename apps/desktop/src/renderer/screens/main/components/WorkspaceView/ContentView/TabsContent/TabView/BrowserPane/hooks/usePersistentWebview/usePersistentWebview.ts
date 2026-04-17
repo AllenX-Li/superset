@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { env } from "renderer/env.renderer";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useTabsStore } from "renderer/stores/tabs/store";
 
@@ -185,7 +186,7 @@ export function usePersistentWebview({
 		} else {
 			// Create new webview
 			webview = document.createElement("webview") as Electron.WebviewTag;
-			webview.setAttribute("partition", "persist:superset");
+			webview.setAttribute("partition", env.APP_PARTITION);
 			webview.setAttribute("allowpopups", "");
 			webview.style.display = "flex";
 			webview.style.flex = "1";

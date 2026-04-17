@@ -6,14 +6,9 @@ import { toast } from "@superset/ui/sonner";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useEffect, useState } from "react";
 import { HiOutlinePencil } from "react-icons/hi2";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
-import { authClient } from "renderer/lib/auth-client";
+// Removed authClient import due to auth-client being deleted
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
-import {
-	getImageExtensionFromMimeType,
-	parseBase64DataUrl,
-} from "shared/file-types";
 import {
 	isItemVisible,
 	SETTING_ITEM_ID,
@@ -35,7 +30,11 @@ export function AccountSettings({ visibleItems }: AccountSettingsProps) {
 		visibleItems,
 	);
 
-	const { data: session } = authClient.useSession();
+	// Local session context (auth-client removed)
+	const session: any = {
+		session: { activeOrganizationId: "local" },
+		user: { id: "local-user", email: "", name: "" },
+	};
 	const currentUserId = session?.user?.id;
 	const collections = useCollections();
 
@@ -68,17 +67,8 @@ export function AccountSettings({ visibleItems }: AccountSettingsProps) {
 			const result = await selectImageMutation.mutateAsync();
 			if (result.canceled || !result.dataUrl) return;
 
-			const { mimeType } = parseBase64DataUrl(result.dataUrl);
-			const ext = getImageExtensionFromMimeType(mimeType) ?? "png";
-
-			const uploadResult = await apiTrpcClient.user.uploadAvatar.mutate({
-				fileData: result.dataUrl,
-				fileName: `avatar.${ext}`,
-				mimeType,
-			});
-
-			setAvatarPreview(uploadResult.url);
-			toast.success("Avatar updated!");
+			toast.error("Avatar upload not available in local mode");
+			return;
 		} catch {
 			toast.error("Failed to update avatar");
 		}
@@ -93,8 +83,7 @@ export function AccountSettings({ visibleItems }: AccountSettingsProps) {
 		}
 
 		try {
-			await apiTrpcClient.user.updateProfile.mutate({ name: nameValue });
-			toast.success("Name updated!");
+			toast.error("Profile update not available in local mode");
 		} catch {
 			toast.error("Failed to update name");
 			setNameValue(user.name ?? "");
@@ -142,7 +131,6 @@ export function AccountSettings({ visibleItems }: AccountSettingsProps) {
 												</div>
 											</button>
 										</li>
-
 										<li className="flex items-center justify-between gap-8 pb-6 border-b border-border">
 											<div className="flex-1 text-sm font-medium">Name</div>
 											<div className="flex-1">
@@ -155,7 +143,6 @@ export function AccountSettings({ visibleItems }: AccountSettingsProps) {
 												/>
 											</div>
 										</li>
-
 										<li className="flex items-center justify-between gap-8">
 											<div className="flex-1 text-sm font-medium">Email</div>
 											<div className="flex-1">

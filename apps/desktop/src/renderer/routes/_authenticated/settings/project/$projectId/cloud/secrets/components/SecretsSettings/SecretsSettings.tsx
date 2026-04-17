@@ -2,8 +2,6 @@ import { Button } from "@superset/ui/button";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { HiOutlineCloud } from "react-icons/hi2";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
-import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { SettingsSection } from "../../../../components/ProjectSettings";
@@ -71,9 +69,8 @@ export function SecretsSettings({ projectId }: SecretsSettingsProps) {
 		return cloudProjects.find((c) => c.id === project.neonProjectId);
 	}, [project?.neonProjectId, cloudProjects]);
 
-	const { data: session } = authClient.useSession();
-	const organizationId = session?.session?.activeOrganizationId;
-	const [isCreatingCloud, setIsCreatingCloud] = useState(false);
+	const organizationId: string | null = null;
+	const [isCreatingCloud, _setIsCreatingCloud] = useState(false);
 	const [isAddSheetOpen, setIsAddSheetOpen] = useState(false);
 	const [editingSecret, setEditingSecret] = useState<EditingSecret | null>(
 		null,
@@ -81,30 +78,8 @@ export function SecretsSettings({ projectId }: SecretsSettingsProps) {
 	const [refreshKey, setRefreshKey] = useState(0);
 
 	const handleCreateCloudProject = useCallback(async () => {
-		if (!project || !organizationId || !project.githubOwner) return;
-		const repoName = project.mainRepoPath.split("/").pop();
-		if (!repoName) return;
-
-		setIsCreatingCloud(true);
-		try {
-			const cloudProject = await apiTrpcClient.project.create.mutate({
-				organizationId,
-				name: project.name,
-				slug: repoName.toLowerCase(),
-				repoOwner: project.githubOwner,
-				repoName,
-				repoUrl: `https://github.com/${project.githubOwner}/${repoName}`,
-			});
-			linkToNeon.mutate({
-				id: projectId,
-				neonProjectId: cloudProject.id,
-			});
-		} catch (err) {
-			console.error("[project-settings] Failed to create cloud project:", err);
-		} finally {
-			setIsCreatingCloud(false);
-		}
-	}, [project, organizationId, linkToNeon, projectId]);
+		return;
+	}, []);
 
 	const handleSaved = () => {
 		setRefreshKey((k) => k + 1);

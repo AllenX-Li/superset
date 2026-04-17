@@ -2,8 +2,6 @@ import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
-import { env } from "renderer/env.renderer";
-import { authClient } from "renderer/lib/auth-client";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
@@ -20,7 +18,6 @@ import type {
 const PENDING_WORKSPACE_TAB_ORDER = Number.MAX_SAFE_INTEGER;
 
 export function useDashboardSidebarData() {
-	const { data: session } = authClient.useSession();
 	const collections = useCollections();
 	const { machineId, activeHostUrl } = useLocalHostService();
 	const { toggleProjectCollapsed } = useDashboardSidebarState();
@@ -37,9 +34,7 @@ export function useDashboardSidebarData() {
 			})),
 		[collections],
 	);
-	const activeOrganizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+	const activeOrganizationId = MOCK_ORG_ID;
 	const activeHostClient = activeHostUrl
 		? getHostServiceClientByUrl(activeHostUrl)
 		: null;

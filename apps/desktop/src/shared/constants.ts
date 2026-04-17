@@ -1,5 +1,5 @@
 import { PROTOCOL_SCHEMES } from "@superset/shared/constants";
-import { getWorkspaceName } from "./env.shared";
+import { productName } from "~/package.json";
 
 export const PLATFORM = {
 	IS_MAC: process.platform === "darwin",
@@ -7,13 +7,17 @@ export const PLATFORM = {
 	IS_LINUX: process.platform === "linux",
 };
 
-const workspace = getWorkspaceName();
-export const SUPERSET_DIR_NAME = workspace
-	? `.superset-${workspace}`
+const IS_LOCAL_BUILD = productName === "Superset Local";
+
+export const SUPERSET_DIR_NAME = IS_LOCAL_BUILD
+	? ".superset-local"
 	: ".superset";
-export const PROTOCOL_SCHEME = workspace
-	? `superset-${workspace}`
+export const PROTOCOL_SCHEME = IS_LOCAL_BUILD
+	? "superset-local"
 	: PROTOCOL_SCHEMES.PROD;
+export const APP_PARTITION = IS_LOCAL_BUILD
+	? "persist:superset-local"
+	: "persist:superset";
 // Project-level directory name (always .superset, not conditional)
 export const PROJECT_SUPERSET_DIR_NAME = ".superset";
 export const WORKTREES_DIR_NAME = "worktrees";

@@ -1,9 +1,6 @@
 import { useEffect, useRef } from "react";
-import { env } from "renderer/env.renderer";
-import { authClient } from "renderer/lib/auth-client";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
-import { MOCK_ORG_ID } from "shared/constants";
 
 function getMigrationMarkerKey(organizationId: string): string {
 	return `v2-terminal-presets-migrated-${organizationId}`;
@@ -21,10 +18,7 @@ function getMigrationMarkerKey(organizationId: string): string {
  */
 export function useMigrateV1PresetsToV2() {
 	const collections = useCollections();
-	const { data: session } = authClient.useSession();
-	const organizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: session?.session?.activeOrganizationId;
+	const organizationId = "local";
 	const migratedOrgRef = useRef<string | null>(null);
 
 	useEffect(() => {
@@ -67,5 +61,5 @@ export function useMigrateV1PresetsToV2() {
 				migratedOrgRef.current = null;
 			}
 		})();
-	}, [collections.v2TerminalPresets, organizationId]);
+	}, [collections.v2TerminalPresets]);
 }

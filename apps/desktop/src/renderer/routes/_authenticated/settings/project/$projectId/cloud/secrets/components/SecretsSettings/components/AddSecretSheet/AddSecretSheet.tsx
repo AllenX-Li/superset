@@ -20,7 +20,6 @@ import {
 	HiOutlineTrash,
 	HiPlus,
 } from "react-icons/hi2";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { parseEnvContent, validateEnvContent } from "../../utils/env-file";
 
 interface SecretEntry {
@@ -207,22 +206,8 @@ export function AddSecretSheet({
 
 		setIsSaving(true);
 		try {
-			for (const entry of validEntries) {
-				await apiTrpcClient.project.secrets.upsert.mutate({
-					projectId,
-					organizationId,
-					key: entry.key.trim(),
-					value: entry.value.trim(),
-					sensitive,
-				});
-			}
-			toast.success(
-				validEntries.length === 1
-					? `Added ${validEntries[0].key.trim()}`
-					: `Added ${validEntries.length} environment variables`,
-			);
-			onSaved();
-			onOpenChange(false);
+			toast.error("Secret management not available in local mode");
+			return;
 		} catch (err) {
 			console.error("[secrets/upsert] Failed to save:", err);
 			toast.error("Failed to save environment variables");

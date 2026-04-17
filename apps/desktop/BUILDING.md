@@ -1,12 +1,12 @@
 # Development
 
-Run the dev server without env validation or auth:
+Run the dev server without env validation:
 
 ```bash
 SKIP_ENV_VALIDATION=1 bun run dev
 ```
 
-This skips environment variable validation and the sign-in screen. Desktop chat also falls back to local-only session bootstrap in this mode, so you can test chat/streaming without the cloud API as long as you have local model credentials configured.
+This skips environment variable validation. Desktop chat falls back to local-only session bootstrap in this mode, so you can test chat/streaming without the cloud API as long as you have local model credentials configured.
 
 # Release
 

@@ -13,7 +13,6 @@ import {
 	HiMagnifyingGlass,
 	HiOutlinePlus,
 } from "react-icons/hi2";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { SecretRow } from "./components/SecretRow";
 
 interface Secret {
@@ -71,17 +70,13 @@ export function EnvironmentVariablesList({
 
 	const fetchSecrets = useCallback(async () => {
 		try {
-			const result = await apiTrpcClient.project.secrets.getDecrypted.query({
-				projectId: cloudProjectId,
-				organizationId,
-			});
-			setSecrets(result);
+			setSecrets([]);
 		} catch (err) {
 			console.error("[secrets/fetch] Failed to fetch secrets:", err);
 		} finally {
 			setIsLoading(false);
 		}
-	}, [cloudProjectId, organizationId]);
+	}, []);
 
 	useEffect(() => {
 		fetchSecrets();

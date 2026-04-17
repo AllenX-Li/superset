@@ -16,8 +16,6 @@ import { HiCheckCircle, HiOutlineArrowTopRightOnSquare } from "react-icons/hi2";
 import { SiLinear } from "react-icons/si";
 import { GATED_FEATURES, usePaywall } from "renderer/components/Paywall";
 import { env } from "renderer/env.renderer";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
-import { authClient } from "renderer/lib/auth-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import {
 	isItemVisible,
@@ -41,8 +39,7 @@ interface GithubInstallation {
 export function IntegrationsSettings({
 	visibleItems,
 }: IntegrationsSettingsProps) {
-	const { data: session } = authClient.useSession();
-	const activeOrganizationId = session?.session?.activeOrganizationId;
+	const activeOrganizationId: string | null = null;
 	const collections = useCollections();
 	const { gateFeature } = usePaywall();
 
@@ -80,17 +77,13 @@ export function IntegrationsSettings({
 		}
 
 		try {
-			const result =
-				await apiTrpcClient.integration.github.getInstallation.query({
-					organizationId: activeOrganizationId,
-				});
-			setGithubInstallation(result);
+			setGithubInstallation(null);
 		} catch (err) {
 			console.error("[integrations] Failed to fetch GitHub installation:", err);
 		} finally {
 			setIsLoadingGithub(false);
 		}
-	}, [activeOrganizationId]);
+	}, []);
 
 	useEffect(() => {
 		fetchGithubInstallation();

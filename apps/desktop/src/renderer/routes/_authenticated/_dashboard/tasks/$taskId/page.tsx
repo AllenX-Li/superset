@@ -5,13 +5,12 @@ import type {
 } from "@superset/db/schema";
 import { ScrollArea } from "@superset/ui/scroll-area";
 import { Separator } from "@superset/ui/separator";
-import { eq, or } from "@tanstack/db";
-import { useLiveQuery } from "@tanstack/react-db";
-import { useQuery } from "@tanstack/react-query";
+import { toast } from "@superset/ui/sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
-import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
+import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { Route as TasksLayoutRoute } from "../layout";
 import { ActivitySection } from "./components/ActivitySection";
 import { EditableTitle } from "./components/EditableTitle";
@@ -36,7 +35,9 @@ function TaskDetailPage() {
 	const { taskId } = Route.useParams();
 	const { tab, assignee, search } = TasksLayoutRoute.useSearch();
 	const navigate = useNavigate();
-	const collections = useCollections();
+	const { activeHostUrl } = useLocalHostService();
+	const queryClient = useQueryClient();
+
 	const isUuidTaskId =
 		/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
 			taskId,
@@ -51,73 +52,90 @@ function TaskDetailPage() {
 	}, [tab, assignee, search]);
 	useEscapeToNavigate("/tasks", { search: backSearch });
 
-	// Support both UUID and slug lookups
-	const { data: taskData } = useLiveQuery(
-		(q) =>
-			q
-				.from({ tasks: collections.tasks })
-				.innerJoin({ status: collections.taskStatuses }, ({ tasks, status }) =>
-					eq(tasks.statusId, status.id),
-				)
-				.leftJoin({ assignee: collections.users }, ({ tasks, assignee }) =>
-					eq(tasks.assigneeId, assignee.id),
-				)
-				.leftJoin({ creator: collections.users }, ({ tasks, creator }) =>
-					eq(tasks.creatorId, creator.id),
-				)
-				.select(({ tasks, status, assignee, creator }) => ({
-					...tasks,
-					status,
-					assignee: assignee ?? null,
-					creator: creator ?? null,
-				}))
-				.where(({ tasks }) => or(eq(tasks.id, taskId), eq(tasks.slug, taskId))),
-		[collections, taskId],
-	);
+	const { data: taskRow, isLoading: isTaskLoading } = useQuery({
+		queryKey: ["task-detail", taskId, isUuidTaskId ? "id" : "slug"],
+		queryFn: () => {
+			if (!activeHostUrl) return null;
+			const client = getHostServiceClientByUrl(activeHostUrl);
+			return isUuidTaskId
+				? client.task.byId.query(taskId)
+				: client.task.bySlug.query(taskId);
+		},
+		enabled: !!activeHostUrl,
+	});
+
+	const { data: statuses } = useQuery({
+		queryKey: ["taskStatuses"],
+		queryFn: () => {
+			if (!activeHostUrl) return [];
+			return getHostServiceClientByUrl(activeHostUrl).taskStatus.all.query();
+		},
+		enabled: !!activeHostUrl,
+	});
+
+	const statusMap = useMemo(() => {
+		const map = new Map<string, SelectTaskStatus>();
+		for (const status of statuses ?? []) {
+			map.set(status.id, status);
+		}
+		return map;
+	}, [statuses]);
 
 	const task: TaskDetailRecord | null = useMemo(() => {
-		if (!taskData || taskData.length === 0) return null;
-		const task = taskData[0];
+		if (!taskRow) return null;
+		const t = taskRow.task as SelectTask;
+		const status = statusMap.get(t.statusId);
+		if (!status) return null;
 		return {
-			...task,
-			assignee:
-				typeof task.assignee?.id === "string"
-					? (task.assignee as SelectUser)
-					: null,
-			creator:
-				typeof task.creator?.id === "string"
-					? (task.creator as SelectUser)
-					: null,
+			...t,
+			status,
+			assignee: taskRow.assignee?.id
+				? (taskRow.assignee as unknown as SelectUser)
+				: null,
+			creator: taskRow.creator?.id
+				? (taskRow.creator as unknown as SelectUser)
+				: null,
 		};
-	}, [taskData]);
-	const taskFallbackQuery = useQuery({
-		queryKey: ["task-detail-fallback", taskId, isUuidTaskId ? "id" : "slug"],
-		queryFn: () =>
-			isUuidTaskId
-				? apiTrpcClient.task.byId.query(taskId)
-				: apiTrpcClient.task.bySlug.query(taskId),
-		enabled: !task,
-		retry: false,
-	});
-	const isTaskSyncing = !task && !!taskFallbackQuery.data;
-	const isTaskLoading = !task && taskFallbackQuery.isPending;
+	}, [taskRow, statusMap]);
 
 	const handleBack = () => {
 		navigate({ to: "/tasks", search: backSearch });
 	};
 
-	const handleSaveTitle = (title: string) => {
-		if (!task) return;
-		collections.tasks.update(task.id, (draft) => {
-			draft.title = title;
-		});
+	const handleSaveTitle = async (title: string) => {
+		if (!task || !activeHostUrl) return;
+		try {
+			await getHostServiceClientByUrl(activeHostUrl).task.update.mutate({
+				id: task.id,
+				title,
+			});
+			await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+			await queryClient.invalidateQueries({
+				queryKey: ["task-detail", task.id],
+			});
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Failed to update title",
+			);
+		}
 	};
 
-	const handleSaveDescription = (markdown: string) => {
-		if (!task) return;
-		collections.tasks.update(task.id, (draft) => {
-			draft.description = markdown;
-		});
+	const handleSaveDescription = async (markdown: string) => {
+		if (!task || !activeHostUrl) return;
+		try {
+			await getHostServiceClientByUrl(activeHostUrl).task.update.mutate({
+				id: task.id,
+				description: markdown,
+			});
+			await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+			await queryClient.invalidateQueries({
+				queryKey: ["task-detail", task.id],
+			});
+		} catch (error) {
+			toast.error(
+				error instanceof Error ? error.message : "Failed to update description",
+			);
+		}
 	};
 
 	const handleDelete = () => {
@@ -126,12 +144,10 @@ function TaskDetailPage() {
 	const creatorName = task?.creator?.name?.trim() ? task.creator.name : null;
 
 	if (!task) {
-		if (isTaskLoading || isTaskSyncing) {
+		if (isTaskLoading) {
 			return (
 				<div className="flex-1 flex items-center justify-center">
-					<span className="text-muted-foreground">
-						{isTaskSyncing ? "Syncing task..." : "Loading task..."}
-					</span>
+					<span className="text-muted-foreground">Loading task...</span>
 				</div>
 			);
 		}

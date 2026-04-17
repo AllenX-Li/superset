@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/electron/main";
 import { IPCMode } from "@sentry/electron/main";
 import { session } from "electron";
+import { APP_PARTITION } from "shared/constants";
 import { env } from "../env.main";
 
 let sentryInitialized = false;
@@ -8,7 +9,11 @@ let sentryInitialized = false;
 export function initSentry(): void {
 	if (sentryInitialized) return;
 
-	if (!env.SENTRY_DSN_DESKTOP || env.NODE_ENV !== "production") {
+	if (
+		!env.SENTRY_DSN_DESKTOP ||
+		env.NODE_ENV !== "production" ||
+		APP_PARTITION.includes("local")
+	) {
 		return;
 	}
 
@@ -21,7 +26,7 @@ export function initSentry(): void {
 			ipcMode: IPCMode.Classic,
 			getSessions: () => [
 				session.defaultSession,
-				session.fromPartition("persist:superset"),
+				session.fromPartition(APP_PARTITION),
 			],
 		});
 
