@@ -111,6 +111,8 @@ jobs:
         run: bun install --frozen --ignore-scripts
 
       - name: Typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: bun run typecheck
 
   build:
