@@ -86,6 +86,7 @@ jobs:
       - name: Test
         env:
           RELAY_URL: https://relay.superset.sh
+          NODE_OPTIONS: --max-old-space-size=4096
         run: bun run test
 
   typecheck:
