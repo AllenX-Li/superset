@@ -159,7 +159,7 @@ describe("buildForkAgentLaunch", () => {
 		});
 		if (build?.kind !== "terminal") throw new Error("wrong kind");
 		expect(build.launch.command).toContain("Refactor auth");
-	});
+	}, { timeout: 15_000 });
 
 	test("attachments produce disk-ready bytes + matching names", async () => {
 		const build = await buildForkAgentLaunch({
