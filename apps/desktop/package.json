@@ -32,7 +32,7 @@
 		"generate:routes": "tsr generate",
 		"pretypecheck": "bun run generate:icons && bun run generate:routes",
 		"typecheck": "tsc --noEmit",
-		"test": "bun test"
+		"test": "bun test --smol"
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^3.0.43",
