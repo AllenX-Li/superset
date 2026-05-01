@@ -25,6 +25,7 @@ import { AgentHooks } from "./components/AgentHooks";
 import { GlobalTerminalLifecycle } from "./components/GlobalTerminalLifecycle";
 import { TeardownLogsDialog } from "./components/TeardownLogsDialog";
 import { createPierreWorker } from "./lib/pierreWorker";
+import { CollectionsProvider } from "./providers/CollectionsProvider";
 import { LocalHostServiceProvider } from "./providers/LocalHostServiceProvider";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -115,21 +116,23 @@ function AuthenticatedLayout() {
 	});
 
 	return (
-		<DndProvider manager={dragDropManager}>
-			<GlobalTerminalLifecycle />
-			<LocalHostServiceProvider>
-				<WorkerPoolContextProvider
-					poolOptions={{ workerFactory: createPierreWorker, poolSize: 8 }}
-					highlighterOptions={{ preferredHighlighter: "shiki-wasm" }}
-				>
-					<AgentHooks />
-					<Outlet />
-					<WorkspaceInitEffects />
-					<NewWorkspaceModal />
-					<InitGitDialog />
-					<TeardownLogsDialog />
-				</WorkerPoolContextProvider>
-			</LocalHostServiceProvider>
-		</DndProvider>
+		<CollectionsProvider>
+			<DndProvider manager={dragDropManager}>
+				<GlobalTerminalLifecycle />
+				<LocalHostServiceProvider>
+					<WorkerPoolContextProvider
+						poolOptions={{ workerFactory: createPierreWorker, poolSize: 8 }}
+						highlighterOptions={{ preferredHighlighter: "shiki-wasm" }}
+					>
+						<AgentHooks />
+						<Outlet />
+						<WorkspaceInitEffects />
+						<NewWorkspaceModal />
+						<InitGitDialog />
+						<TeardownLogsDialog />
+					</WorkerPoolContextProvider>
+				</LocalHostServiceProvider>
+			</DndProvider>
+		</CollectionsProvider>
 	);
 }
