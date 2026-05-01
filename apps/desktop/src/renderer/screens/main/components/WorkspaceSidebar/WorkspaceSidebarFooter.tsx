@@ -7,7 +7,6 @@ import {
 } from "@superset/ui/dropdown-menu";
 import { toast } from "@superset/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
-import { useNavigate } from "@tanstack/react-router";
 import { LuFolderGit, LuFolderOpen, LuFolderPlus } from "react-icons/lu";
 import { useOpenProject } from "renderer/react-query/projects";
 import { useOpenMainRepoWorkspace } from "renderer/react-query/workspaces";
@@ -20,7 +19,6 @@ interface WorkspaceSidebarFooterProps {
 export function WorkspaceSidebarFooter({
 	isCollapsed = false,
 }: WorkspaceSidebarFooterProps) {
-	const navigate = useNavigate();
 	const { openNew, isPending: isOpenPending } = useOpenProject();
 	const openMainRepoWorkspace = useOpenMainRepoWorkspace();
 
@@ -74,7 +72,7 @@ export function WorkspaceSidebarFooter({
 							<LuFolderOpen className="size-4" strokeWidth={STROKE_WIDTH} />
 							Open project
 						</DropdownMenuItem>
-						<DropdownMenuItem onClick={() => navigate({ to: "/new-project" })}>
+						<DropdownMenuItem onClick={handleOpenProject}>
 							<LuFolderGit className="size-4" strokeWidth={STROKE_WIDTH} />
 							New project
 						</DropdownMenuItem>
@@ -103,7 +101,7 @@ export function WorkspaceSidebarFooter({
 						<LuFolderOpen className="size-4" strokeWidth={STROKE_WIDTH} />
 						Open project
 					</DropdownMenuItem>
-					<DropdownMenuItem onClick={() => navigate({ to: "/new-project" })}>
+					<DropdownMenuItem onClick={handleOpenProject}>
 						<LuFolderGit className="size-4" strokeWidth={STROKE_WIDTH} />
 						New project
 					</DropdownMenuItem>

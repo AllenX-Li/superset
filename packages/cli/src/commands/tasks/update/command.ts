@@ -15,11 +15,11 @@ export default command({
 	},
 	run: async ({ ctx, args, options }) => {
 		const idOrSlug = args.idOrSlug as string;
-		const task = await ctx.api.task.bySlug.query(idOrSlug);
-		if (!task) throw new CLIError(`Task not found: ${idOrSlug}`);
+		const taskRow = await ctx.api.task.bySlug.query(idOrSlug);
+		if (!taskRow) throw new CLIError(`Task not found: ${idOrSlug}`);
 
 		const result = await ctx.api.task.update.mutate({
-			id: task.id,
+			id: taskRow.task.id,
 			title: options.title ?? undefined,
 			description: options.description ?? undefined,
 			priority: options.priority ?? undefined,
@@ -29,7 +29,7 @@ export default command({
 
 		return {
 			data: result.task,
-			message: `Updated task ${task.slug}`,
+			message: `Updated task ${taskRow.task.slug}`,
 		};
 	},
 });

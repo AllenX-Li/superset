@@ -25,6 +25,7 @@ const envSchema = z.object({
 	NEXT_PUBLIC_POSTHOG_HOST: z.string().default("https://us.i.posthog.com"),
 	SENTRY_DSN_DESKTOP: z.string().optional(),
 	RELAY_URL: z.url().default("https://relay.superset.sh"),
+	APP_PARTITION: z.string().default("persist:superset"),
 });
 
 /**
@@ -48,6 +49,7 @@ const rawEnv = {
 		| undefined,
 	SENTRY_DSN_DESKTOP: import.meta.env.SENTRY_DSN_DESKTOP as string | undefined,
 	RELAY_URL: process.env.RELAY_URL,
+	APP_PARTITION: process.env.APP_PARTITION,
 };
 
 // Only allow skipping validation in development (never in production)

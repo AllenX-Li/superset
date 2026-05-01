@@ -1,5 +1,4 @@
 import type { FileUIPart } from "ai";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { isDesktopChatDevMode } from "renderer/lib/dev-chat";
 
 async function getHttpErrorDetail(response: Response): Promise<string> {
@@ -31,7 +30,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 async function uploadFile(
-	sessionId: string,
+	_sessionId: string,
 	file: FileUIPart,
 	signal?: AbortSignal,
 ): Promise<FileUIPart> {
@@ -57,13 +56,7 @@ async function uploadFile(
 		};
 	}
 
-	const result = await apiTrpcClient.chat.uploadAttachment.mutate({
-		sessionId,
-		filename,
-		mediaType: file.mediaType,
-		fileData,
-	});
-	return { type: "file", ...result };
+	throw new Error("File upload not available in local mode");
 }
 
 export async function uploadFiles(

@@ -17,6 +17,7 @@ import {
 } from "lib/trpc/routers/auth/utils/auth-functions";
 import { applyShellEnvToProcess } from "lib/trpc/routers/workspaces/utils/shell-env";
 import {
+	APP_PARTITION,
 	DEFAULT_CONFIRM_ON_QUIT,
 	PLATFORM,
 	PROTOCOL_SCHEME,
@@ -304,7 +305,7 @@ if (!gotTheLock) {
 		};
 		protocol.handle("superset-icon", iconProtocolHandler);
 		session
-			.fromPartition("persist:superset")
+			.fromPartition(APP_PARTITION)
 			.protocol.handle("superset-icon", iconProtocolHandler);
 
 		// Serve system fonts (e.g. SF Mono on macOS) via custom protocol
@@ -333,7 +334,7 @@ if (!gotTheLock) {
 			};
 			protocol.handle("superset-font", fontProtocolHandler);
 			session
-				.fromPartition("persist:superset")
+				.fromPartition(APP_PARTITION)
 				.protocol.handle("superset-font", fontProtocolHandler);
 		}
 

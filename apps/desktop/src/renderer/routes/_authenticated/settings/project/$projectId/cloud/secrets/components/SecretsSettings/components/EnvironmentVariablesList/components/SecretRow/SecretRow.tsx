@@ -18,7 +18,6 @@ import {
 	HiOutlineCodeBracket,
 } from "react-icons/hi2";
 import { useCopyToClipboard } from "renderer/hooks/useCopyToClipboard";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 
 interface SecretRowProps {
 	secret: {
@@ -30,17 +29,11 @@ interface SecretRowProps {
 		updatedAt: Date;
 		createdBy: { id: string; name: string; image: string | null } | null;
 	};
-	organizationId: string;
 	onEdit: () => void;
 	onDeleted: () => void;
 }
 
-export function SecretRow({
-	secret,
-	organizationId,
-	onEdit,
-	onDeleted,
-}: SecretRowProps) {
+export function SecretRow({ secret, onEdit, onDeleted }: SecretRowProps) {
 	const [isRevealed, setIsRevealed] = useState(false);
 	const [isDeleting, setIsDeleting] = useState(false);
 
@@ -50,17 +43,13 @@ export function SecretRow({
 		if (!confirm(`Delete environment variable "${secret.key}"?`)) return;
 		setIsDeleting(true);
 		try {
-			await apiTrpcClient.project.secrets.delete.mutate({
-				id: secret.id,
-				organizationId,
-			});
 			onDeleted();
 		} catch (err) {
 			console.error("[secrets/delete] Failed to delete:", err);
 		} finally {
 			setIsDeleting(false);
 		}
-	}, [secret.id, secret.key, organizationId, onDeleted]);
+	}, [secret.key, onDeleted]);
 
 	const { copyToClipboard, copied } = useCopyToClipboard(1500);
 	const handleCopy = useCallback(() => {

@@ -8,9 +8,9 @@ export default command({
 		// Required variadic positional — framework guarantees non-empty at runtime
 		const ids = args.ids as string[];
 		for (const idOrSlug of ids) {
-			const task = await ctx.api.task.bySlug.query(idOrSlug);
-			if (!task) throw new CLIError(`Task not found: ${idOrSlug}`);
-			await ctx.api.task.delete.mutate(task.id);
+			const taskRow = await ctx.api.task.bySlug.query(idOrSlug);
+			if (!taskRow) throw new CLIError(`Task not found: ${idOrSlug}`);
+			await ctx.api.task.delete.mutate(taskRow.task.id);
 		}
 		return {
 			data: { count: ids.length, ids },

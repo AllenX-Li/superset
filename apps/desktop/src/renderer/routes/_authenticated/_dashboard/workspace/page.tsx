@@ -27,8 +27,7 @@ function WorkspaceIndexPage() {
 		if (isLoading || !workspaces) return;
 
 		if (allWorkspaces.length === 0) {
-			// Redirect to clean onboarding screen (no sidebar/topbar)
-			navigate({ to: "/welcome", replace: true });
+			navigate({ to: "/workspaces", replace: true });
 			return;
 		}
 

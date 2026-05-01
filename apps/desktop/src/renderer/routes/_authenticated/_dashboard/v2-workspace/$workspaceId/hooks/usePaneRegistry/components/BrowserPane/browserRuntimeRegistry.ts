@@ -1,3 +1,4 @@
+import { env } from "renderer/env.renderer";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import type { BrowserLoadError } from "shared/tabs-types";
 import { sanitizeUrl } from "./sanitizeUrl";
@@ -147,7 +148,7 @@ class BrowserRuntimeRegistryImpl {
 
 	private createEntry(paneId: string, initialUrl: string): RegistryEntry {
 		const webview = document.createElement("webview") as Electron.WebviewTag;
-		webview.setAttribute("partition", "persist:superset");
+		webview.setAttribute("partition", env.APP_PARTITION);
 		webview.setAttribute("allowpopups", "");
 		webview.style.position = "fixed";
 		webview.style.top = "0";

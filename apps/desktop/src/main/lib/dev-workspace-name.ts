@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import path from "node:path";
 import { workspaces, worktrees } from "@superset/local-db";
 import BetterSqlite3 from "better-sqlite3";
@@ -11,18 +11,18 @@ import { localDb } from "./local-db";
 const IS_DEV = process.env.NODE_ENV === "development";
 const WORKTREE_BASE = path.resolve(homedir(), ".superset/worktrees");
 const PROD_LOCAL_DB_PATH = path.join(homedir(), ".superset", "local.db");
+const CASE_INSENSITIVE = platform() === "darwin" || platform() === "win32";
+const norm = (p: string) => (CASE_INSENSITIVE ? p.toLowerCase() : p);
 
 function getWorktreeSegmentsFromCwd(cwd: string): string[] | undefined {
-	const cwdRelative = path.relative(WORKTREE_BASE, cwd);
-	if (
-		!cwdRelative ||
-		cwdRelative.startsWith("..") ||
-		path.isAbsolute(cwdRelative)
-	) {
-		return undefined;
-	}
+	const base = norm(WORKTREE_BASE) + path.sep;
+	const normalizedCwd = norm(cwd);
+	if (!normalizedCwd.startsWith(base)) return undefined;
 
-	const segments = cwdRelative.split(path.sep).filter(Boolean);
+	const rel = cwd.slice(base.length);
+	if (!rel || path.isAbsolute(rel)) return undefined;
+
+	const segments = rel.split(path.sep).filter(Boolean);
 	return segments.length >= 2 ? segments : undefined;
 }
 

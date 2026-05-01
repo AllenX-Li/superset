@@ -1,11 +1,8 @@
 import { and, eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import { env } from "renderer/env.renderer";
-import { authClient } from "renderer/lib/auth-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
-import { MOCK_ORG_ID } from "shared/constants";
 
 export type V2WorkspaceHostType = "local-device" | "remote-device" | "cloud";
 
@@ -71,14 +68,11 @@ export function useAccessibleV2Workspaces(
 	options: UseAccessibleV2WorkspacesOptions = {},
 ): UseAccessibleV2WorkspacesResult {
 	const searchQuery = options.searchQuery ?? "";
-	const { data: session } = authClient.useSession();
 	const collections = useCollections();
 	const { machineId } = useLocalHostService();
 
-	const activeOrganizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
-	const currentUserId = session?.user?.id ?? null;
+	const activeOrganizationId = "local";
+	const currentUserId = null;
 
 	const { data: rows = [] } = useLiveQuery(
 		(q) =>
@@ -161,7 +155,7 @@ export function useAccessibleV2Workspaces(
 		return Array.from(deduped.values()).sort(
 			(a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
 		);
-	}, [rows, machineId, currentUserId]);
+	}, [rows, machineId]);
 
 	const searchFiltered = useMemo(
 		() =>

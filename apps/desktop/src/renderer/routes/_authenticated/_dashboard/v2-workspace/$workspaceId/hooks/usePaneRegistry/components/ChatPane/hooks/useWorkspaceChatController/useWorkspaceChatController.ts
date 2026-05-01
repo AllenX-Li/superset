@@ -2,8 +2,6 @@ import { workspaceTrpc } from "@superset/workspace-client";
 import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useCallback, useMemo } from "react";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
-import { authClient } from "renderer/lib/auth-client";
 import {
 	isDesktopChatDevMode,
 	resolveDesktopChatOrganizationId,
@@ -37,25 +35,15 @@ function toSessionSelectorItem(session: {
 	};
 }
 
-async function createSessionRecord(input: {
+async function createSessionRecord(_input: {
 	sessionId: string;
 	v2WorkspaceId: string;
 }): Promise<void> {
-	if (isDesktopChatDevMode()) return;
-	await apiTrpcClient.chat.createSession.mutate({
-		sessionId: input.sessionId,
-		v2WorkspaceId: input.v2WorkspaceId,
-	});
+	return;
 }
 
-async function deleteSessionRecord(sessionId: string): Promise<void> {
-	if (isDesktopChatDevMode()) return;
-	const result = await apiTrpcClient.chat.deleteSession.mutate({
-		sessionId,
-	});
-	if (!result.deleted) {
-		throw new Error(`Failed to delete session ${sessionId}`);
-	}
+async function deleteSessionRecord(_sessionId: string): Promise<void> {
+	return;
 }
 
 export function useWorkspaceChatController({
@@ -67,10 +55,7 @@ export function useWorkspaceChatController({
 	onSessionIdChange: (sessionId: string | null) => void;
 	workspaceId: string;
 }) {
-	const { data: session } = authClient.useSession();
-	const organizationId = resolveDesktopChatOrganizationId(
-		session?.session?.activeOrganizationId,
-	);
+	const organizationId = resolveDesktopChatOrganizationId(null);
 	const collections = useCollections();
 
 	const { data: workspace } = workspaceTrpc.workspace.get.useQuery(

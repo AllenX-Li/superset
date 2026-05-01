@@ -86,7 +86,7 @@ jobs:
       - name: Test
         env:
           RELAY_URL: https://relay.superset.sh
-        run: bun run test
+        run: bunx turbo test --concurrency=2
 
   typecheck:
     name: Typecheck
@@ -111,6 +111,8 @@ jobs:
         run: bun install --frozen --ignore-scripts
 
       - name: Typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: bun run typecheck
 
   build:

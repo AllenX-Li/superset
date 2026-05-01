@@ -20,7 +20,6 @@ import {
 	HiOutlineTrash,
 	HiPlus,
 } from "react-icons/hi2";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 import { parseEnvContent, validateEnvContent } from "../../utils/env-file";
 
 interface SecretEntry {
@@ -37,9 +36,6 @@ function nextEntryId() {
 interface AddSecretSheetProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	projectId: string;
-	organizationId: string;
-	onSaved: () => void;
 }
 
 function createEmptyEntry(): SecretEntry {
@@ -56,13 +52,7 @@ function toSecretEntries(
 	}));
 }
 
-export function AddSecretSheet({
-	open,
-	onOpenChange,
-	projectId,
-	organizationId,
-	onSaved,
-}: AddSecretSheetProps) {
+export function AddSecretSheet({ open, onOpenChange }: AddSecretSheetProps) {
 	const [entries, setEntries] = useState<SecretEntry[]>([createEmptyEntry()]);
 	const [sensitive, setSensitive] = useState(true);
 	const [isSaving, setIsSaving] = useState(false);
@@ -207,22 +197,8 @@ export function AddSecretSheet({
 
 		setIsSaving(true);
 		try {
-			for (const entry of validEntries) {
-				await apiTrpcClient.project.secrets.upsert.mutate({
-					projectId,
-					organizationId,
-					key: entry.key.trim(),
-					value: entry.value.trim(),
-					sensitive,
-				});
-			}
-			toast.success(
-				validEntries.length === 1
-					? `Added ${validEntries[0].key.trim()}`
-					: `Added ${validEntries.length} environment variables`,
-			);
-			onSaved();
-			onOpenChange(false);
+			toast.error("Secret management not available in local mode");
+			return;
 		} catch (err) {
 			console.error("[secrets/upsert] Failed to save:", err);
 			toast.error("Failed to save environment variables");

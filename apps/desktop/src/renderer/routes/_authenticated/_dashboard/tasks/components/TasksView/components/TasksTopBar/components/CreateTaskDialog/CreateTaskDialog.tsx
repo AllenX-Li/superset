@@ -1,4 +1,3 @@
-import { authClient } from "@superset/auth/client";
 import type { TaskPriority } from "@superset/db/enums";
 import { Button } from "@superset/ui/button";
 import {
@@ -17,9 +16,10 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { HiChevronRight, HiOutlinePaperClip, HiXMark } from "react-icons/hi2";
 import { PLATFORM } from "renderer/hotkeys";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
+import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { TaskMarkdownRenderer } from "renderer/routes/_authenticated/_dashboard/tasks/$taskId/components/TaskMarkdownRenderer";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { compareStatusesForDropdown } from "../../../../utils/sorting";
 import type { TabValue } from "../../TasksTopBar";
 import { CreateTaskAssigneePicker } from "./components/CreateTaskAssigneePicker";
@@ -42,7 +42,7 @@ export function CreateTaskDialog({
 	assigneeFilter,
 }: CreateTaskDialogProps) {
 	const collections = useCollections();
-	const { data: session } = authClient.useSession();
+	const { activeHostUrl } = useLocalHostService();
 	const navigate = useNavigate();
 	const modKey = PLATFORM === "mac" ? "⌘" : "Ctrl";
 	const titleInputRef = useRef<HTMLInputElement>(null);
@@ -78,13 +78,13 @@ export function CreateTaskDialog({
 
 	const statuses = useMemo(() => statusData ?? [], [statusData]);
 	const users = useMemo(() => userData ?? [], [userData]);
-	const activeOrganizationId = session?.session?.activeOrganizationId ?? null;
+	const activeOrganizationId = "local";
 	const organizationLabel = useMemo(() => {
 		const organization = organizationData?.find(
 			(org) => org.id === activeOrganizationId,
 		);
 		return organization?.name ?? "Task";
-	}, [activeOrganizationId, organizationData]);
+	}, [organizationData]);
 
 	const defaultStatusId = useMemo(() => {
 		const sortedStatuses = [...statuses].sort(compareStatusesForDropdown);
@@ -120,17 +120,18 @@ export function CreateTaskDialog({
 		toast.info("Attachments are not wired yet");
 	};
 	const handleCreate = async () => {
-		if (!title.trim() || isCreating) return;
+		if (!title.trim() || isCreating || !activeHostUrl) return;
 
 		setIsCreating(true);
 
 		try {
-			const result = await apiTrpcClient.task.createFromUi.mutate({
+			const client = getHostServiceClientByUrl(activeHostUrl);
+			const result = await client.task.createFromUi.mutate({
 				title: title.trim(),
-				description: description.trim() || null,
-				statusId,
+				description: description.trim() || undefined,
+				statusId: statusId ?? undefined,
 				priority,
-				assigneeId,
+				assigneeId: assigneeId ?? undefined,
 			});
 
 			if (!result.task) {

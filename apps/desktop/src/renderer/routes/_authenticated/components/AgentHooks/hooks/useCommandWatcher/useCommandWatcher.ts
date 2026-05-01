@@ -3,7 +3,6 @@ import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useFeatureFlagEnabled } from "posthog-js/react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useCreateWorkspace } from "renderer/react-query/workspaces/useCreateWorkspace";
 import { useDeleteWorkspace } from "renderer/react-query/workspaces/useDeleteWorkspace";
@@ -22,7 +21,6 @@ interface ResolvedCommandState {
 
 export function useCommandWatcher() {
 	const { data: deviceInfo } = electronTrpc.auth.getDeviceInfo.useQuery();
-	const { data: session } = authClient.useSession();
 	const collections = useCollections();
 	const isMountedRef = useRef(true);
 	const handledCommandsRef = useRef(new Set<string>());
@@ -33,7 +31,7 @@ export function useCommandWatcher() {
 		new Map<string, ReturnType<typeof setTimeout>>(),
 	);
 
-	const organizationId = session?.session?.activeOrganizationId;
+	const organizationId = "local";
 	const remoteAgentDisabled = useFeatureFlagEnabled(
 		FEATURE_FLAGS.DISABLE_REMOTE_AGENT,
 	);
@@ -304,7 +302,6 @@ export function useCommandWatcher() {
 	}, [
 		shouldWatch,
 		deviceInfo?.deviceId,
-		organizationId,
 		pendingCommands,
 		processCommand,
 		persistResolvedCommand,

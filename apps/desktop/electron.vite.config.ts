@@ -8,7 +8,7 @@ import { config } from "dotenv";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import injectProcessEnvPlugin from "rollup-plugin-inject-process-env";
 import tsconfigPathsPlugin from "vite-tsconfig-paths";
-import { dependencies, resources, version } from "./package.json";
+import { dependencies, productName, resources, version } from "./package.json";
 import { mainExternalizedDependencies } from "./runtime-dependencies";
 import {
 	copyResourcesPlugin,
@@ -95,6 +95,11 @@ export default defineConfig({
 			"process.env.ELECTRIC_PORT": defineEnv(process.env.ELECTRIC_PORT),
 			"process.env.SUPERSET_WORKSPACE_NAME": defineEnv(
 				process.env.SUPERSET_WORKSPACE_NAME,
+			),
+			"process.env.APP_PARTITION": defineEnv(
+				productName === "Superset Local"
+					? "persist:superset-local"
+					: "persist:superset",
 			),
 		},
 
@@ -209,6 +214,11 @@ export default defineConfig({
 			"process.env.ELECTRIC_PORT": defineEnv(process.env.ELECTRIC_PORT),
 			"process.env.SUPERSET_WORKSPACE_NAME": defineEnv(
 				process.env.SUPERSET_WORKSPACE_NAME,
+			),
+			"process.env.APP_PARTITION": defineEnv(
+				productName === "Superset Local"
+					? "persist:superset-local"
+					: "persist:superset",
 			),
 		},
 

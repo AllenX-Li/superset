@@ -10,29 +10,22 @@ import {
 import { Input } from "@superset/ui/input";
 import { toast } from "@superset/ui/sonner";
 import { useEffect, useState } from "react";
-import { apiTrpcClient } from "renderer/lib/api-trpc-client";
 
 interface EditSecretDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	projectId: string;
-	organizationId: string;
 	secret: {
 		id: string;
 		key: string;
 		value: string;
 		sensitive: boolean;
 	};
-	onSaved: () => void;
 }
 
 export function EditSecretDialog({
 	open,
 	onOpenChange,
-	projectId,
-	organizationId,
 	secret,
-	onSaved,
 }: EditSecretDialogProps) {
 	const [value, setValue] = useState("");
 	const [isSaving, setIsSaving] = useState(false);
@@ -49,16 +42,7 @@ export function EditSecretDialog({
 
 		setIsSaving(true);
 		try {
-			await apiTrpcClient.project.secrets.upsert.mutate({
-				projectId,
-				organizationId,
-				key: secret.key,
-				value: value.trim(),
-				sensitive: secret.sensitive,
-			});
-			toast.success(`Updated ${secret.key}`);
-			onSaved();
-			onOpenChange(false);
+			toast.error("Secret management not available in local mode");
 		} catch (err) {
 			console.error("[secrets/edit] Failed to update:", err);
 			toast.error("Failed to update environment variable");

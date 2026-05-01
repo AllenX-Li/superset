@@ -1,7 +1,3 @@
-import { useLiveQuery } from "@tanstack/react-db";
-import { authClient } from "renderer/lib/auth-client";
-import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
-
 export type UserPlan = "free" | "pro" | "enterprise";
 
 interface ResolveCurrentPlanArgs {
@@ -37,21 +33,5 @@ export function resolveCurrentPlan({
 }
 
 export function useCurrentPlan(): UserPlan {
-	const { data: session } = authClient.useSession();
-	const collections = useCollections();
-
-	const { data: subscriptionsData } = useLiveQuery(
-		(q) => q.from({ subscriptions: collections.subscriptions }),
-		[collections],
-	);
-
-	const activeSubscription = subscriptionsData?.find(
-		(subscription) => subscription.status === "active",
-	);
-
-	return resolveCurrentPlan({
-		subscriptionPlan: activeSubscription?.plan,
-		sessionPlan: session?.session?.plan,
-		subscriptionsLoaded: subscriptionsData !== undefined,
-	});
+	return "pro";
 }

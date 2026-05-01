@@ -1,4 +1,3 @@
-import { useLiveQuery } from "@tanstack/react-db";
 import {
 	createContext,
 	type ReactNode,
@@ -6,12 +5,9 @@ import {
 	useEffect,
 	useMemo,
 } from "react";
-import { env } from "renderer/env.renderer";
-import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { setHostServiceSecret } from "renderer/lib/host-service-auth";
 import { MOCK_ORG_ID } from "shared/constants";
-import { useCollections } from "../CollectionsProvider";
 
 interface LocalHostServiceContextValue {
 	machineId: string | null;
@@ -26,30 +22,14 @@ export function LocalHostServiceProvider({
 }: {
 	children: ReactNode;
 }) {
-	const { data: session } = authClient.useSession();
-	const collections = useCollections();
 	const { mutate: startHostService } =
 		electronTrpc.hostServiceCoordinator.start.useMutation();
 
-	const activeOrganizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
-
-	const { data: organizations } = useLiveQuery(
-		(q) => q.from({ organizations: collections.organizations }),
-		[collections],
-	);
-
-	const organizationIds = useMemo(
-		() => organizations?.map((organization) => organization.id) ?? [],
-		[organizations],
-	);
+	const activeOrganizationId = MOCK_ORG_ID;
 
 	useEffect(() => {
-		for (const organizationId of organizationIds) {
-			startHostService({ organizationId });
-		}
-	}, [organizationIds, startHostService]);
+		startHostService({ organizationId: MOCK_ORG_ID });
+	}, [startHostService]);
 
 	const { data: activeConnection } =
 		electronTrpc.hostServiceCoordinator.getConnection.useQuery(

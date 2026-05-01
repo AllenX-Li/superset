@@ -1,11 +1,8 @@
 import { and, eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import { env } from "renderer/env.renderer";
-import { authClient } from "renderer/lib/auth-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
-import { MOCK_ORG_ID } from "shared/constants";
 
 export interface WorkspaceHostOption {
 	id: string;
@@ -20,14 +17,11 @@ interface UseWorkspaceHostOptionsResult {
 }
 
 export function useWorkspaceHostOptions(): UseWorkspaceHostOptionsResult {
-	const { data: session } = authClient.useSession();
 	const collections = useCollections();
 	const { machineId, activeHostUrl } = useLocalHostService();
 
-	const activeOrganizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
-	const currentUserId = session?.user?.id ?? null;
+	const activeOrganizationId = "local";
+	const currentUserId = null;
 
 	const { data: accessibleHosts = [] } = useLiveQuery(
 		(q) =>

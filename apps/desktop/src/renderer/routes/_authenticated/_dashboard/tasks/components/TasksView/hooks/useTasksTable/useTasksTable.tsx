@@ -5,8 +5,7 @@ import type {
 } from "@superset/db/schema";
 import { Badge } from "@superset/ui/badge";
 import { Checkbox } from "@superset/ui/checkbox";
-import { eq, isNull } from "@tanstack/db";
-import { useLiveQuery } from "@tanstack/react-db";
+import { useQuery } from "@tanstack/react-query";
 import {
 	type ColumnFiltersState,
 	createColumnHelper,
@@ -22,8 +21,9 @@ import {
 import { format } from "date-fns";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { HiChevronRight } from "react-icons/hi2";
+import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { getSlugColumnWidth } from "renderer/lib/slug-width";
-import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { create } from "zustand";
 import {
 	StatusIcon,
@@ -80,44 +80,54 @@ export function useTasksTable({
 			| ((prev: RowSelectionState) => RowSelectionState),
 	) => void;
 } {
-	const collections = useCollections();
+	const { activeHostUrl } = useLocalHostService();
 	const [grouping, setGrouping] = useState<string[]>(["status"]);
 	const [expanded, setExpanded] = useState<ExpandedState>(true);
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 	const rowSelection = useRowSelectionStore((s) => s.rowSelection);
 	const setRowSelection = useRowSelectionStore((s) => s.setRowSelection);
 
-	const { data: allData, isLoading } = useLiveQuery(
-		(q) =>
-			q
-				.from({ tasks: collections.tasks })
-				.innerJoin({ status: collections.taskStatuses }, ({ tasks, status }) =>
-					eq(tasks.statusId, status.id),
-				)
-				.leftJoin({ assignee: collections.users }, ({ tasks, assignee }) =>
-					eq(tasks.assigneeId, assignee.id),
-				)
-				.select(({ tasks, status, assignee }) => ({
-					...tasks,
-					status,
-					assignee: assignee ?? null,
-				}))
-				.where(({ tasks }) => isNull(tasks.deletedAt)),
-		[collections],
-	);
+	const { data: taskRows, isLoading } = useQuery({
+		queryKey: ["tasks"],
+		queryFn: () => {
+			if (!activeHostUrl) return [];
+			return getHostServiceClientByUrl(activeHostUrl).task.all.query();
+		},
+		enabled: !!activeHostUrl,
+	});
+
+	const { data: statuses } = useQuery({
+		queryKey: ["taskStatuses"],
+		queryFn: () => {
+			if (!activeHostUrl) return [];
+			return getHostServiceClientByUrl(activeHostUrl).taskStatus.all.query();
+		},
+		enabled: !!activeHostUrl,
+	});
+
+	const statusMap = useMemo(() => {
+		const map = new Map<string, SelectTaskStatus>();
+		for (const status of statuses ?? []) {
+			map.set(status.id, status);
+		}
+		return map;
+	}, [statuses]);
 
 	const sortedData = useMemo(() => {
-		if (!allData) return [];
-		return allData
-			.map((task) => ({
-				...task,
-				assignee:
-					typeof task.assignee?.id === "string"
-						? (task.assignee as SelectUser)
-						: null,
-			}))
+		if (!taskRows) return [];
+		return taskRows
+			.map((row) => {
+				const task = row.task as SelectTask;
+				const status = statusMap.get(task.statusId);
+				if (!status) return null;
+				const assignee = row.assignee?.id
+					? (row.assignee as unknown as SelectUser)
+					: null;
+				return { ...task, status, assignee } satisfies TaskWithStatus;
+			})
+			.filter((t): t is TaskWithStatus => t !== null)
 			.sort(compareTasks);
-	}, [allData]);
+	}, [taskRows, statusMap]);
 
 	const { search } = useHybridSearch(sortedData);
 
@@ -153,7 +163,7 @@ export function useTasksTable({
 	}, [filterTab, assigneeFilter, setRowSelection]);
 
 	const slugColumnWidth = useMemo(
-		() => getSlugColumnWidth((data ?? []).map((t) => t.slug)),
+		() => getSlugColumnWidth(data.map((t) => t.slug)),
 		[data],
 	);
 

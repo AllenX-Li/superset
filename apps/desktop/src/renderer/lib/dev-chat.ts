@@ -1,6 +1,5 @@
 import type { ModelOption } from "renderer/components/Chat/ChatInterface/types";
 import { env } from "renderer/env.renderer";
-import { MOCK_ORG_ID } from "shared/constants";
 
 export const DEV_CHAT_MODELS: ModelOption[] = [
 	{
@@ -37,11 +36,10 @@ export function isDesktopChatDevMode(
 }
 
 export function resolveDesktopChatOrganizationId(
-	activeOrganizationId: string | null | undefined,
-	skipEnvValidation = env.SKIP_ENV_VALIDATION,
+	_activeOrganizationId: string | null | undefined,
+	_skipEnvValidation = env.SKIP_ENV_VALIDATION,
 ): string | null {
-	if (skipEnvValidation) return MOCK_ORG_ID;
-	return activeOrganizationId ?? null;
+	return "local";
 }
 
 export function isDesktopChatSessionReady({

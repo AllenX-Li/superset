@@ -10,7 +10,6 @@ import {
 	DialogTitle,
 } from "@superset/ui/dialog";
 import { toast } from "@superset/ui/sonner";
-import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useOpenProject } from "renderer/react-query/projects";
@@ -45,7 +44,6 @@ function PromptInputResetSync() {
 export function NewWorkspaceModal() {
 	const isOpen = useNewWorkspaceModalOpen();
 	const closeModal = useCloseNewWorkspaceModal();
-	const navigate = useNavigate();
 	const { openNew } = useOpenProject();
 	const preSelectedProjectId = usePreSelectedProjectId();
 
@@ -66,7 +64,6 @@ export function NewWorkspaceModal() {
 
 	const handleNewProject = () => {
 		closeModal();
-		navigate({ to: "/new-project" });
 	};
 
 	return (

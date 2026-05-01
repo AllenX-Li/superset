@@ -3,10 +3,10 @@ import type {
 	SelectTaskStatus,
 	SelectUser,
 } from "@superset/db/schema";
-import { eq, isNull } from "@tanstack/db";
-import { useLiveQuery } from "@tanstack/react-db";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
+import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
+import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import type { TabValue } from "../../components/TasksTopBar";
 import { compareTasks } from "../../utils/sorting";
 import { useHybridSearch } from "../useHybridSearch";
@@ -31,49 +31,51 @@ export function useTasksData({
 	allStatuses: SelectTaskStatus[];
 	isLoading: boolean;
 } {
-	const collections = useCollections();
+	const { activeHostUrl } = useLocalHostService();
 
-	const { data: allData, isLoading } = useLiveQuery(
-		(q) =>
-			q
-				.from({ tasks: collections.tasks })
-				.innerJoin({ status: collections.taskStatuses }, ({ tasks, status }) =>
-					eq(tasks.statusId, status.id),
-				)
-				.leftJoin({ assignee: collections.users }, ({ tasks, assignee }) =>
-					eq(tasks.assigneeId, assignee.id),
-				)
-				.select(({ tasks, status, assignee }) => ({
-					...tasks,
-					status,
-					assignee: assignee ?? null,
-				}))
-				.where(({ tasks }) => isNull(tasks.deletedAt)),
-		[collections],
-	);
+	const { data: taskRows, isLoading: isTasksLoading } = useQuery({
+		queryKey: ["tasks"],
+		queryFn: () => {
+			if (!activeHostUrl) return [];
+			return getHostServiceClientByUrl(activeHostUrl).task.all.query();
+		},
+		enabled: !!activeHostUrl,
+	});
 
-	const { data: statusData, isLoading: isStatusesLoading } = useLiveQuery(
-		(q) =>
-			q
-				.from({ taskStatuses: collections.taskStatuses })
-				.select(({ taskStatuses }) => ({ ...taskStatuses })),
-		[collections],
-	);
+	const { data: statuses, isLoading: isStatusesLoading } = useQuery({
+		queryKey: ["taskStatuses"],
+		queryFn: () => {
+			if (!activeHostUrl) return [];
+			return getHostServiceClientByUrl(activeHostUrl).taskStatus.all.query();
+		},
+		enabled: !!activeHostUrl,
+	});
 
-	const allStatuses = useMemo(() => statusData ?? [], [statusData]);
+	const allStatuses = useMemo(() => statuses ?? [], [statuses]);
+
+	const statusMap = useMemo(() => {
+		const map = new Map<string, SelectTaskStatus>();
+		for (const status of allStatuses) {
+			map.set(status.id, status);
+		}
+		return map;
+	}, [allStatuses]);
 
 	const sortedData = useMemo(() => {
-		if (!allData) return [];
-		return allData
-			.map((task) => ({
-				...task,
-				assignee:
-					typeof task.assignee?.id === "string"
-						? (task.assignee as SelectUser)
-						: null,
-			}))
+		if (!taskRows) return [];
+		return taskRows
+			.map((row) => {
+				const task = row.task as SelectTask;
+				const status = statusMap.get(task.statusId);
+				if (!status) return null;
+				const assignee = row.assignee?.id
+					? (row.assignee as unknown as SelectUser)
+					: null;
+				return { ...task, status, assignee } satisfies TaskWithStatus;
+			})
+			.filter((t): t is TaskWithStatus => t !== null)
 			.sort(compareTasks);
-	}, [allData]);
+	}, [taskRows, statusMap]);
 
 	const { search } = useHybridSearch(sortedData);
 
@@ -119,6 +121,6 @@ export function useTasksData({
 	return {
 		data: filteredData,
 		allStatuses,
-		isLoading: isLoading || isStatusesLoading,
+		isLoading: isTasksLoading || isStatusesLoading,
 	};
 }

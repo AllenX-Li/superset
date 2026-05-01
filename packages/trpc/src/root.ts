@@ -11,6 +11,7 @@ import { integrationRouter } from "./router/integration";
 import { organizationRouter } from "./router/organization";
 import { projectRouter } from "./router/project";
 import { taskRouter } from "./router/task";
+import { taskStatusRouter } from "./router/task-status";
 import { userRouter } from "./router/user";
 import { v2ProjectRouter } from "./router/v2-project";
 import { v2WorkspaceRouter } from "./router/v2-workspace";
@@ -29,6 +30,7 @@ export const appRouter = createTRPCRouter({
 	organization: organizationRouter,
 	project: projectRouter,
 	task: taskRouter,
+	taskStatus: taskStatusRouter,
 	user: userRouter,
 	v2Project: v2ProjectRouter,
 	v2Workspace: v2WorkspaceRouter,

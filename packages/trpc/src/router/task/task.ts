@@ -64,19 +64,38 @@ async function getTaskAccess(
 }
 
 async function getTaskById(userId: string, taskId: string) {
-	const [task] = await db
-		.select()
+	const assignee = alias(users, "assignee");
+	const creator = alias(users, "creator");
+
+	const [row] = await db
+		.select({
+			task: tasks,
+			status: taskStatuses,
+			assignee: {
+				id: assignee.id,
+				name: assignee.name,
+				image: assignee.image,
+			},
+			creator: {
+				id: creator.id,
+				name: creator.name,
+				image: creator.image,
+			},
+		})
 		.from(tasks)
+		.leftJoin(taskStatuses, eq(tasks.statusId, taskStatuses.id))
+		.leftJoin(assignee, eq(tasks.assigneeId, assignee.id))
+		.leftJoin(creator, eq(tasks.creatorId, creator.id))
 		.where(and(eq(tasks.id, taskId), isNull(tasks.deletedAt)))
 		.limit(1);
 
-	if (!task) {
+	if (!row) {
 		return null;
 	}
 
-	await verifyOrgMembership(userId, task.organizationId);
+	await verifyOrgMembership(userId, row.task.organizationId);
 
-	return task;
+	return row;
 }
 
 async function getTaskBySlug(
@@ -86,9 +105,28 @@ async function getTaskBySlug(
 ) {
 	await verifyOrgMembership(userId, organizationId);
 
-	const [task] = await db
-		.select()
+	const assignee = alias(users, "assignee");
+	const creator = alias(users, "creator");
+
+	const [row] = await db
+		.select({
+			task: tasks,
+			status: taskStatuses,
+			assignee: {
+				id: assignee.id,
+				name: assignee.name,
+				image: assignee.image,
+			},
+			creator: {
+				id: creator.id,
+				name: creator.name,
+				image: creator.image,
+			},
+		})
 		.from(tasks)
+		.leftJoin(taskStatuses, eq(tasks.statusId, taskStatuses.id))
+		.leftJoin(assignee, eq(tasks.assigneeId, assignee.id))
+		.leftJoin(creator, eq(tasks.creatorId, creator.id))
 		.where(
 			and(
 				eq(tasks.slug, slug),
@@ -98,7 +136,7 @@ async function getTaskBySlug(
 		)
 		.limit(1);
 
-	return task ?? null;
+	return row ?? null;
 }
 
 async function getScopedStatusId(
