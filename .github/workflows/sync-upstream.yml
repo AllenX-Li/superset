@@ -9,11 +9,8 @@ on:
       force:
         description: "Force full re-analysis from last 30 upstream commits, ignoring last-sync file"
         required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
+        default: false
+        type: boolean
 
 jobs:
   sync-upstream:

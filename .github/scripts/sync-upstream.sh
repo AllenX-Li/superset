@@ -235,13 +235,20 @@ echo "$UPSTREAM_HEAD" > "$LAST_SYNC_FILE"
 BRANCH="sync/upstream-${DATE}"
 
 git checkout main
-git checkout -b "$BRANCH"
+git checkout -B "$BRANCH"
 git add "$REPORT_FILE" "$LAST_SYNC_FILE"
 git commit -m "chore: upstream sync analysis ${DATE}"
-git push origin "$BRANCH"
+git push --force origin "$BRANCH"
 
 # Build PR body from the executive summary section of the report
 EXEC_SUMMARY=$(sed -n '/## Executive Summary/,/---/p' "$REPORT_FILE" | head -20)
+
+# Skip PR creation if one already exists for this branch
+EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
+if [[ -n "$EXISTING_PR" ]]; then
+  echo "✅ PR #${EXISTING_PR} already exists for branch ${BRANCH}, skipping creation."
+  exit 0
+fi
 
 gh pr create \
   --title "chore: upstream sync analysis — ${DATE_FORMATTED}" \
