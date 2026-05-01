@@ -71,7 +71,6 @@ export function useTasksTable({
 	assigneeFilter,
 }: UseTasksTableParams): {
 	table: Table<TaskWithStatus>;
-	isLoading: boolean;
 	slugColumnWidth: string;
 	rowSelection: RowSelectionState;
 	setRowSelection: (
@@ -358,5 +357,5 @@ export function useTasksTable({
 		autoResetExpanded: false,
 	});
 
-	return { table, isLoading, slugColumnWidth, rowSelection, setRowSelection };
+	return { table, slugColumnWidth, rowSelection, setRowSelection };
 }

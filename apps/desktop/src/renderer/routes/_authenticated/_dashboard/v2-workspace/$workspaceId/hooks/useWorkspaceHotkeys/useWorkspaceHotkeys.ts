@@ -1,38 +1,41 @@
 import {
 	type FocusDirection,
 	getSpatialNeighborPaneId,
+	type PaneRegistry,
 	type WorkspaceStore,
 } from "@superset/panes";
-import { useCallback } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import { useV2UserPreferences } from "renderer/hooks/useV2UserPreferences";
 import { useHotkey } from "renderer/hotkeys";
-import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import type { V2TerminalPresetRow } from "renderer/routes/_authenticated/providers/CollectionsProvider/dashboardSidebarLocal";
 import type { StoreApi } from "zustand";
 import type {
 	BrowserPaneData,
 	ChatPaneData,
+	DiffPaneData,
 	PaneViewerData,
 	TerminalPaneData,
 } from "../../types";
 
 export function useWorkspaceHotkeys({
 	store,
-	workspaceId,
 	matchedPresets,
 	executePreset,
+	paneRegistry,
 }: {
 	store: StoreApi<WorkspaceStore<PaneViewerData>>;
-	workspaceId: string;
 	matchedPresets: V2TerminalPresetRow[];
 	executePreset: (preset: V2TerminalPresetRow) => void;
+	paneRegistry: PaneRegistry<PaneViewerData>;
 }) {
-	const collections = useCollections();
+	const { setRightSidebarOpen, setRightSidebarTab } = useV2UserPreferences();
+	const visiblePresets = useMemo(
+		() => matchedPresets.filter((preset) => preset.pinnedToBar !== false),
+		[matchedPresets],
+	);
 
 	useHotkey("TOGGLE_SIDEBAR", () => {
-		if (!collections.v2WorkspaceLocalState.get(workspaceId)) return;
-		collections.v2WorkspaceLocalState.update(workspaceId, (draft) => {
-			draft.rightSidebarOpen = !draft.rightSidebarOpen;
-		});
+		setRightSidebarOpen((prev) => !prev);
 	});
 
 	// --- Tab creation ---
@@ -67,13 +70,47 @@ export function useWorkspaceHotkeys({
 		});
 	});
 
+	useHotkey("OPEN_DIFF_VIEWER", () => {
+		setRightSidebarOpen(true);
+		setRightSidebarTab("changes");
+
+		const state = store.getState();
+		for (const tab of state.tabs) {
+			for (const pane of Object.values(tab.panes)) {
+				if (pane.kind !== "diff") continue;
+				state.setActiveTab(tab.id);
+				state.setActivePane({ tabId: tab.id, paneId: pane.id });
+				return;
+			}
+		}
+		state.addTab({
+			panes: [
+				{
+					kind: "diff",
+					data: { path: "", collapsedFiles: [] } as DiffPaneData,
+				},
+			],
+		});
+	});
+
 	// --- Tab management ---
 
-	useHotkey("CLOSE_TERMINAL", () => {
-		const state = store.getState();
-		const active = state.getActivePane();
-		if (active) {
+	const isClosingPaneRef = useRef(false);
+	useHotkey("CLOSE_PANE", async () => {
+		if (isClosingPaneRef.current) return;
+		isClosingPaneRef.current = true;
+		try {
+			const state = store.getState();
+			const active = state.getActivePane();
+			if (!active) return;
+			const definition = paneRegistry[active.pane.kind];
+			if (definition?.onBeforeClose) {
+				const allowed = await definition.onBeforeClose(active.pane);
+				if (!allowed) return;
+			}
 			state.closePane({ tabId: active.tabId, paneId: active.pane.id });
+		} finally {
+			isClosingPaneRef.current = false;
 		}
 	});
 
@@ -247,10 +284,10 @@ export function useWorkspaceHotkeys({
 
 	const openPresetByIndex = useCallback(
 		(index: number) => {
-			const preset = matchedPresets[index];
+			const preset = visiblePresets[index];
 			if (preset) executePreset(preset);
 		},
-		[matchedPresets, executePreset],
+		[visiblePresets, executePreset],
 	);
 
 	useHotkey("OPEN_PRESET_1", () => openPresetByIndex(0));

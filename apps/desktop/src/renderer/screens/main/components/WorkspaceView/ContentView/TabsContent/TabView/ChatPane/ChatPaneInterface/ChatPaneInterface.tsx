@@ -15,7 +15,6 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatInputFooter } from "renderer/components/Chat/ChatInterface/components/ChatInputFooter";
 import { useSlashCommandExecutor } from "renderer/components/Chat/ChatInterface/hooks/useSlashCommandExecutor";
-import type { SlashCommand } from "renderer/components/Chat/ChatInterface/hooks/useSlashCommands";
 import type {
 	ModelOption,
 	PermissionMode,
@@ -188,7 +187,6 @@ export function ChatPaneInterface({
 	onStartFreshSession,
 	onConsumeLaunchConfig,
 	onUserMessageSubmitted,
-	onRawSnapshotChange,
 }: ChatPaneInterfaceProps) {
 	const { models: availableModels, defaultModel } = useAvailableModels();
 	const selectedModelId = useChatPreferencesStore(
@@ -216,6 +214,9 @@ export function ChatPaneInterface({
 	const [approvalResponsePending, setApprovalResponsePending] = useState(false);
 	const [planResponsePending, setPlanResponsePending] = useState(false);
 	const [questionResponsePending, setQuestionResponsePending] = useState(false);
+	const [answeredQuestionId, setAnsweredQuestionId] = useState<string | null>(
+		null,
+	);
 	const [editingUserMessageId, setEditingUserMessageId] = useState<
 		string | null
 	>(null);
@@ -462,6 +463,13 @@ export function ChatPaneInterface({
 		clearDraftInStore();
 	}, [clearDraftInStore, sessionId]);
 
+	// Reset optimistic hide when a new question arrives
+	useEffect(() => {
+		if (pendingQuestion && pendingQuestion.questionId !== answeredQuestionId) {
+			setAnsweredQuestionId(null);
+		}
+	}, [pendingQuestion, answeredQuestionId]);
+
 	useEffect(() => {
 		if (
 			shouldClearPendingUserTurn({
@@ -499,23 +507,6 @@ export function ChatPaneInterface({
 		}
 		setSubmitStatus(undefined);
 	}, [isRunning]);
-
-	useEffect(() => {
-		onRawSnapshotChange?.({
-			sessionId,
-			isRunning: canAbort,
-			currentMessage: currentMessage ?? null,
-			messages: messages ?? [],
-			error,
-		});
-	}, [
-		canAbort,
-		currentMessage,
-		error,
-		messages,
-		onRawSnapshotChange,
-		sessionId,
-	]);
 
 	useEffect(() => {
 		messagesLengthRef.current = messages?.length ?? 0;
@@ -814,14 +805,6 @@ export function ChatPaneInterface({
 		[stopActiveResponse],
 	);
 
-	const handleSlashCommandSend = useCallback(
-		(command: SlashCommand) => {
-			void handleSend({ content: `/${command.name}` }).catch((error) => {
-				console.debug("[chat] handleSlashCommandSend error", error);
-			});
-		},
-		[handleSend],
-	);
 	const restartFromUserMessage = useCallback(
 		async (
 			request: UserMessageRestartRequest,
@@ -962,7 +945,10 @@ export function ChatPaneInterface({
 			const trimmedAnswer = answer.trim();
 			if (!trimmedQuestionId || !trimmedAnswer) return;
 			clearRuntimeError();
+			setAnsweredQuestionId(trimmedQuestionId);
 			setQuestionResponsePending(true);
+			// Clear the orange dot immediately when the user submits their answer
+			useTabsStore.getState().setPaneStatus(paneId, "idle");
 			try {
 				await commands.respondToQuestion({
 					payload: {
@@ -970,11 +956,16 @@ export function ChatPaneInterface({
 						answer: trimmedAnswer,
 					},
 				});
+			} catch (error) {
+				// Roll back optimistic UI if the RPC fails
+				setAnsweredQuestionId(null);
+				useTabsStore.getState().setPaneStatus(paneId, "permission");
+				throw error;
 			} finally {
 				setQuestionResponsePending(false);
 			}
 		},
-		[clearRuntimeError, commands],
+		[clearRuntimeError, commands, paneId],
 	);
 
 	const errorMessage = runtimeError ?? toErrorMessage(error);
@@ -1008,15 +999,14 @@ export function ChatPaneInterface({
 					pendingPlanApproval={pendingPlanApproval}
 					isPlanSubmitting={planResponsePending}
 					onPlanRespond={handlePlanResponse}
-					pendingQuestion={pendingQuestion}
-					isQuestionSubmitting={questionResponsePending}
-					onQuestionRespond={handleQuestionResponse}
 					editingUserMessageId={editingUserMessageId}
 					isEditSubmitting={isAwaitingAssistant}
 					onStartEditUserMessage={setEditingUserMessageId}
 					onCancelEditUserMessage={() => setEditingUserMessageId(null)}
 					onSubmitEditedUserMessage={handleSubmitEditedUserMessage}
 					onRestartUserMessage={handleResendUserMessage}
+					pendingQuestion={pendingQuestion}
+					answeredQuestionId={answeredQuestionId}
 				/>
 				<McpControls mcpUi={mcpUi} />
 				<ChatUploadFooter
@@ -1040,7 +1030,14 @@ export function ChatPaneInterface({
 					onSend={handleSend}
 					onSubmitStart={() => setSubmitStatus("submitted")}
 					onStop={handleStop}
-					onSlashCommandSend={handleSlashCommandSend}
+					pendingQuestion={
+						pendingQuestion?.questionId === answeredQuestionId
+							? null
+							: pendingQuestion
+					}
+					isQuestionSubmitting={questionResponsePending}
+					onQuestionRespond={handleQuestionResponse}
+					onQuestionCancel={() => void stopActiveResponse()}
 				/>
 			</div>
 		</PromptInputProvider>

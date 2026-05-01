@@ -1,7 +1,20 @@
 import { useEffect, useRef } from "react";
 import { HOTKEYS, type HotkeyId, PLATFORM } from "../../registry";
 import { useHotkeyOverridesStore } from "../../stores/hotkeyOverridesStore";
-import type { Platform } from "../../types";
+import { useKeyboardLayoutStore } from "../../stores/keyboardLayoutStore";
+import type {
+	BindingMode,
+	ParsedBinding,
+	Platform,
+	ShortcutBinding,
+} from "../../types";
+import {
+	bindingsEqual,
+	bindingToDispatchChord,
+	isFunctionKey,
+	NAMED_KEYS,
+	serializeBinding,
+} from "../../utils/binding";
 import {
 	canonicalizeChord,
 	isIgnorableKey,
@@ -14,24 +27,71 @@ import {
 // reordering at compare time.
 const MODIFIER_ORDER = ["meta", "ctrl", "alt", "shift"] as const;
 
-export function captureHotkeyFromEvent(event: KeyboardEvent): string | null {
-	// event.code (not event.key) so Shift+2 records as `2`, Alt+L on Mac as
-	// `l`, and non-US layouts produce stable tokens matching the registry.
-	if (event.code === undefined) return null;
-	const key = normalizeToken(event.code);
-	if (isIgnorableKey(key)) return null;
+export interface CapturedHotkey {
+	/** Modifiers + canonical(event.code). Always meaningful. */
+	codeChord: string;
+	/** Modifiers + lowercased event.key for printable letters/digits/punctuation;
+	 *  identical to codeChord for named keys / F-keys. */
+	keyChord: string;
+	classification: "named" | "fkey" | "printable";
+}
 
-	const isFKey = /^f([1-9]|1[0-2])$/.test(key);
-	if (!isFKey && !event.ctrlKey && !event.metaKey) return null;
+export function captureHotkeyFromEvent(
+	event: KeyboardEvent,
+): CapturedHotkey | null {
+	if (event.code === undefined) return null;
+	const codeKey = normalizeToken(event.code);
+	if (isIgnorableKey(codeKey)) return null;
+
+	const isFKey = isFunctionKey(codeKey);
+	const isNamed = NAMED_KEYS.has(codeKey);
+	// Mac Option is a legitimate shortcut modifier (⌥⌫ = delete-word). On
+	// other platforms Alt is the menu key and AltGr masquerades as ctrl+alt,
+	// so we still require ctrl/meta.
+	const altIsAppModifier = PLATFORM === "mac" && event.altKey;
+	if (!isFKey && !event.ctrlKey && !event.metaKey && !altIsAppModifier) {
+		return null;
+	}
 
 	const modifiers = new Set<string>();
 	if (event.metaKey) modifiers.add("meta");
 	if (event.ctrlKey) modifiers.add("ctrl");
 	if (event.altKey) modifiers.add("alt");
 	if (event.shiftKey) modifiers.add("shift");
-
 	const ordered = MODIFIER_ORDER.filter((m) => modifiers.has(m));
-	return [...ordered, key].join("+");
+
+	const codeChord = [...ordered, codeKey].join("+");
+
+	let classification: "named" | "fkey" | "printable" = "printable";
+	if (isFKey) classification = "fkey";
+	else if (isNamed) classification = "named";
+
+	let keyChord = codeChord;
+	if (classification === "printable") {
+		const produced = (event.key ?? "").toLowerCase();
+		// Single printable char only — strings like "Dead", "Process" or
+		// multi-char IME output stay on codeChord. "+" would collide with
+		// the chord separator and break round-tripping (`meta+shift++`).
+		if (produced.length === 1 && /\S/.test(produced) && produced !== "+") {
+			keyChord = [...ordered, produced].join("+");
+		}
+	}
+	return { codeChord, keyChord, classification };
+}
+
+/**
+ * Pick the right chord + mode for a captured event, given a user mode
+ * preference. F-keys and named keys force `named` regardless of preference.
+ */
+export function resolveCapturedBinding(
+	captured: CapturedHotkey,
+	preferredMode: "physical" | "logical",
+): ParsedBinding {
+	if (captured.classification === "fkey" || captured.classification === "named")
+		return { mode: "named", chord: captured.codeChord };
+	const mode: BindingMode = preferredMode;
+	const chord = mode === "logical" ? captured.keyChord : captured.codeChord;
+	return { mode, chord };
 }
 
 // Chords the OS / shell is likely to intercept. Binding is allowed (Linux
@@ -55,6 +115,11 @@ const OS_RESERVED: Record<Platform, Set<string>> = {
 	linux: new Set(["alt+f4", "alt+tab"].map(canonicalizeChord)),
 };
 
+function isMacAltOnlyChord(canonical: string): boolean {
+	const mods = new Set(canonical.split("+").slice(0, -1));
+	return mods.has("alt") && !mods.has("meta") && !mods.has("ctrl");
+}
+
 function checkReserved(
 	keys: string,
 ): { reason: string; severity: "error" | "warning" } | null {
@@ -63,27 +128,50 @@ function checkReserved(
 		return { reason: "Reserved by terminal", severity: "error" };
 	if (OS_RESERVED[PLATFORM].has(canonical))
 		return { reason: "Reserved by OS", severity: "warning" };
+	if (PLATFORM === "mac" && isMacAltOnlyChord(canonical))
+		return {
+			reason: "Option shortcuts may prevent typing special characters",
+			severity: "warning",
+		};
 	return null;
 }
 
-function getHotkeyConflict(keys: string, excludeId: HotkeyId): HotkeyId | null {
+function getHotkeyConflict(
+	candidate: ShortcutBinding,
+	excludeId: HotkeyId,
+): HotkeyId | null {
 	const { overrides } = useHotkeyOverridesStore.getState();
-	const canonicalKeys = canonicalizeChord(keys);
+	const layoutMap = useKeyboardLayoutStore.getState().map;
+	const candidateDispatch = bindingToDispatchChord(candidate, layoutMap);
+	if (!candidateDispatch) return null;
+	const target = canonicalizeChord(candidateDispatch);
 	for (const id of Object.keys(HOTKEYS) as HotkeyId[]) {
 		if (id === excludeId) continue;
 		const effective = id in overrides ? overrides[id] : HOTKEYS[id].key;
-		if (effective && canonicalizeChord(effective) === canonicalKeys) return id;
+		if (!effective) continue;
+		const otherDispatch = bindingToDispatchChord(effective, layoutMap);
+		if (otherDispatch && canonicalizeChord(otherDispatch) === target) return id;
 	}
 	return null;
 }
 
 interface UseRecordHotkeysOptions {
-	onSave?: (id: HotkeyId, keys: string) => void;
+	/** User's mode preference for new printable bindings. Default `"logical"`
+	 *  — the recorded chord follows the printed character (Dvorak user
+	 *  pressing the P-labeled key gets a binding for the P character, which
+	 *  works on any layout). F-keys and named keys ignore this and use
+	 *  `"named"` mode regardless. */
+	preferredMode?: "physical" | "logical";
+	onSave?: (id: HotkeyId, binding: ShortcutBinding) => void;
 	onCancel?: () => void;
 	onUnassign?: (id: HotkeyId) => void;
-	onConflict?: (targetId: HotkeyId, keys: string, conflictId: HotkeyId) => void;
+	onConflict?: (
+		targetId: HotkeyId,
+		binding: ShortcutBinding,
+		conflictId: HotkeyId,
+	) => void;
 	onReserved?: (
-		keys: string,
+		binding: ShortcutBinding,
 		info: { reason: string; severity: "error" | "warning" },
 	) => void;
 }
@@ -119,32 +207,35 @@ export function useRecordHotkeys(
 			const captured = captureHotkeyFromEvent(event);
 			if (!captured) return;
 
-			const reserved = checkReserved(captured);
+			const preferredMode = optionsRef.current?.preferredMode ?? "logical";
+			const parsed = resolveCapturedBinding(captured, preferredMode);
+			const binding = serializeBinding(parsed);
+
+			// Reserved chords gate on the dispatch chord (event.code form), since
+			// that's what the OS / terminal sees when the user presses the key.
+			const reserved = checkReserved(captured.codeChord);
 			if (reserved?.severity === "error") {
-				optionsRef.current?.onReserved?.(captured, reserved);
+				optionsRef.current?.onReserved?.(binding, reserved);
 				return;
 			}
 
-			const conflictId = getHotkeyConflict(captured, recordingId);
+			const conflictId = getHotkeyConflict(binding, recordingId);
 			if (conflictId) {
-				optionsRef.current?.onConflict?.(recordingId, captured, conflictId);
+				optionsRef.current?.onConflict?.(recordingId, binding, conflictId);
 				return;
 			}
 
 			if (reserved?.severity === "warning") {
-				optionsRef.current?.onReserved?.(captured, reserved);
+				optionsRef.current?.onReserved?.(binding, reserved);
 			}
 
-			const defaultKey = HOTKEYS[recordingId].key;
-			if (
-				defaultKey &&
-				canonicalizeChord(captured) === canonicalizeChord(defaultKey)
-			) {
+			const defaultBinding = HOTKEYS[recordingId].key;
+			if (defaultBinding && bindingsEqual(binding, defaultBinding)) {
 				resetOverride(recordingId);
 			} else {
-				setOverride(recordingId, captured);
+				setOverride(recordingId, binding);
 			}
-			optionsRef.current?.onSave?.(recordingId, captured);
+			optionsRef.current?.onSave?.(recordingId, binding);
 		};
 
 		window.addEventListener("keydown", handler, { capture: true });

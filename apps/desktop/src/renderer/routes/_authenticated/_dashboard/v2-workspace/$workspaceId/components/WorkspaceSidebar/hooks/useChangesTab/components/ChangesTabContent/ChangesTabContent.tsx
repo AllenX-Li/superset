@@ -16,18 +16,20 @@ interface ChangesTabContentProps {
 	commits: { data: RouterOutputs["git"]["listCommits"] | undefined };
 	branches: { data: RouterOutputs["git"]["listBranches"] | undefined };
 	filter: ChangesFilter;
+	baseBranch: string | null;
 	files: ChangesetFile[];
 	isLoading: boolean;
 	totalChanges: number;
 	totalAdditions: number;
 	totalDeletions: number;
-	onSelectFile?: (path: string) => void;
+	worktreePath?: string;
+	onSelectFile?: (path: string, openInNewTab?: boolean) => void;
+	onOpenFile?: (absolutePath: string, openInNewTab?: boolean) => void;
+	onOpenInEditor?: (path: string) => void;
 	onFilterChange: (filter: ChangesFilter) => void;
 	onBaseBranchChange: (branchName: string) => void;
 	onRenameBranch: (newName: string) => void;
 	canRenameBranch: boolean;
-	viewedSet: Set<string>;
-	onSetViewed: (path: string, next: boolean) => void;
 }
 
 export const ChangesTabContent = memo(function ChangesTabContent({
@@ -35,18 +37,20 @@ export const ChangesTabContent = memo(function ChangesTabContent({
 	commits,
 	branches,
 	filter,
+	baseBranch,
 	files,
 	isLoading,
 	totalChanges,
 	totalAdditions,
 	totalDeletions,
+	worktreePath,
 	onSelectFile,
+	onOpenFile,
+	onOpenInEditor,
 	onFilterChange,
 	onBaseBranchChange,
 	onRenameBranch,
 	canRenameBranch,
-	viewedSet,
-	onSetViewed,
 }: ChangesTabContentProps) {
 	if (status.isLoading) {
 		return (
@@ -69,7 +73,7 @@ export const ChangesTabContent = memo(function ChangesTabContent({
 			<ChangesHeader
 				currentBranch={status.data.currentBranch}
 				defaultBranchName={status.data.defaultBranch.name}
-				commitCount={commits.data?.commits.length ?? 0}
+				baseBranch={baseBranch}
 				totalFiles={totalChanges}
 				totalAdditions={totalAdditions}
 				totalDeletions={totalDeletions}
@@ -88,9 +92,10 @@ export const ChangesTabContent = memo(function ChangesTabContent({
 				<ChangesFileList
 					files={files}
 					isLoading={isLoading}
+					worktreePath={worktreePath}
 					onSelectFile={onSelectFile}
-					viewedSet={viewedSet}
-					onSetViewed={onSetViewed}
+					onOpenFile={onOpenFile}
+					onOpenInEditor={onOpenInEditor}
 				/>
 			</div>
 		</div>

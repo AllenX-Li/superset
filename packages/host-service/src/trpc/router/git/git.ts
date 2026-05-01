@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { projects, pullRequests, workspaces } from "../../../db/schema";
-import { protectedProcedure, router } from "../../index";
+import { protectedProcedure, queryProcedure, router } from "../../index";
 import type {
 	ChangedFile,
 	CheckConclusionState,
@@ -16,12 +16,16 @@ import type {
 	PullRequestReviewThread,
 	PullRequestState,
 } from "./types";
+import { gitConfigWrite } from "./utils/config-write";
 import {
 	buildBranch,
+	countUntrackedFileLines,
+	detectUnstagedRenames,
 	getChangedFilesForDiff,
 	getDefaultBranchName,
 	mapGitStatus,
 	parseNumstat,
+	resolveBaseComparison,
 } from "./utils/git-helpers";
 import {
 	type GraphQLThreadsResult,
@@ -31,7 +35,7 @@ import {
 import { resolveWorktreePath } from "./utils/resolve-worktree";
 
 export const gitRouter = router({
-	listBranches: protectedProcedure
+	listBranches: queryProcedure
 		.input(z.object({ workspaceId: z.string() }))
 		.query(async ({ ctx, input }) => {
 			const worktreePath = resolveWorktreePath(ctx, input.workspaceId);
@@ -40,7 +44,7 @@ export const gitRouter = router({
 			const currentBranchName = (
 				await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")
 			).trim();
-			const defaultBranchName = await getDefaultBranchName(git);
+			const base = await resolveBaseComparison(git);
 
 			let branchNames: string[] = [];
 			try {
@@ -54,19 +58,15 @@ export const gitRouter = router({
 
 			const branches = await Promise.all(
 				branchNames.map((name) =>
-					buildBranch(
-						git,
-						name,
-						name === currentBranchName,
-						defaultBranchName ? `origin/${defaultBranchName}` : undefined,
-					),
+					buildBranch(git, name, name === currentBranchName, base?.baseRef),
 				),
 			);
 
 			return { branches };
 		}),
 
-	getStatus: protectedProcedure
+	getStatus: queryProcedure
+		.meta({ timeoutMs: 15_000 })
 		.input(
 			z.object({
 				workspaceId: z.string(),
@@ -80,11 +80,9 @@ export const gitRouter = router({
 			const currentBranchName = (
 				await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")
 			).trim();
-			const defaultBranchName =
-				input.baseBranch ?? (await getDefaultBranchName(git));
-			const baseRef = defaultBranchName
-				? `origin/${defaultBranchName}`
-				: "HEAD";
+			const base = await resolveBaseComparison(git, input.baseBranch);
+			const defaultBranchName = base?.branchName ?? null;
+			const baseRef = base?.baseRef ?? "HEAD";
 
 			const [currentBranch, defaultBranch, status, ignoredRaw] =
 				await Promise.all([
@@ -112,11 +110,18 @@ export const gitRouter = router({
 				.map((line) => line.trim().replace(/\/$/, ""))
 				.filter(Boolean);
 
-			const againstBase = await getChangedFilesForDiff(git, [baseRef, "HEAD"]);
+			const againstBase = await getChangedFilesForDiff(git, [
+				`${baseRef}...HEAD`,
+			]);
 
-			// Staged — use status.files index character for correct status
+			// Staged — use status.files index character for correct status.
+			// `-M -C` lets the numstat collapse renamed/copied entries so a
+			// `git add` of `mv old new` yields a single 0/0 rename row
+			// instead of an A + D pair.
 			const stagedNumstat = parseNumstat(
-				await git.raw(["diff", "--numstat", "--cached"]).catch(() => ""),
+				await git
+					.raw(["diff", "--numstat", "-z", "-M", "-C", "--cached"])
+					.catch(() => ""),
 			);
 			const staged: ChangedFile[] = [];
 			for (const file of status.files) {
@@ -128,6 +133,8 @@ export const gitRouter = router({
 					};
 					staged.push({
 						path: file.path,
+						oldPath:
+							file.from && file.from !== file.path ? file.from : undefined,
 						status: mapGitStatus(idx),
 						additions: stats.additions,
 						deletions: stats.deletions,
@@ -137,18 +144,21 @@ export const gitRouter = router({
 
 			// Unstaged — use status.files working_dir character
 			const unstagedNumstat = parseNumstat(
-				await git.raw(["diff", "--numstat"]).catch(() => ""),
+				await git.raw(["diff", "--numstat", "-z"]).catch(() => ""),
 			);
 			const unstaged: ChangedFile[] = [];
+			const untrackedFiles: ChangedFile[] = [];
 			for (const file of status.files) {
 				const wd = file.working_dir;
 				if (file.index === "?" && wd === "?") {
-					unstaged.push({
+					const entry: ChangedFile = {
 						path: file.path,
 						status: "untracked",
 						additions: 0,
 						deletions: 0,
-					});
+					};
+					untrackedFiles.push(entry);
+					unstaged.push(entry);
 				} else if (wd && wd !== " ") {
 					const stats = unstagedNumstat.get(file.path) ?? {
 						additions: 0,
@@ -162,18 +172,54 @@ export const gitRouter = router({
 					});
 				}
 			}
+			await countUntrackedFileLines(worktreePath, untrackedFiles);
+
+			const hasDeletions = unstaged.some((f) => f.status === "deleted");
+			const renames = await detectUnstagedRenames(
+				git,
+				worktreePath,
+				untrackedFiles.map((f) => f.path),
+				hasDeletions,
+			);
+
+			let mergedUnstaged = unstaged;
+			if (renames.length > 0) {
+				const consumedDeleted = new Set<string>();
+				const consumedUntracked = new Set<string>();
+				for (const r of renames) {
+					if (r.status === "renamed") consumedDeleted.add(r.oldPath);
+					consumedUntracked.add(r.newPath);
+				}
+				mergedUnstaged = unstaged.filter((f) => {
+					if (f.status === "deleted" && consumedDeleted.has(f.path))
+						return false;
+					if (f.status === "untracked" && consumedUntracked.has(f.path))
+						return false;
+					return true;
+				});
+				for (const r of renames) {
+					mergedUnstaged.push({
+						path: r.newPath,
+						oldPath: r.oldPath,
+						status: r.status,
+						additions: r.additions,
+						deletions: r.deletions,
+					});
+				}
+			}
 
 			return {
 				currentBranch,
 				defaultBranch,
 				againstBase,
 				staged,
-				unstaged,
+				unstaged: mergedUnstaged,
 				ignoredPaths,
 			};
 		}),
 
-	listCommits: protectedProcedure
+	listCommits: queryProcedure
+		.meta({ timeoutMs: 30_000 })
 		.input(
 			z.object({
 				workspaceId: z.string(),
@@ -184,11 +230,8 @@ export const gitRouter = router({
 			const worktreePath = resolveWorktreePath(ctx, input.workspaceId);
 			const git = await ctx.git(worktreePath);
 
-			const defaultBranchName =
-				input.baseBranch ?? (await getDefaultBranchName(git));
-			const baseRef = defaultBranchName
-				? `origin/${defaultBranchName}`
-				: "HEAD";
+			const base = await resolveBaseComparison(git, input.baseBranch);
+			const baseRef = base?.baseRef ?? "HEAD";
 
 			const commits: Commit[] = [];
 			try {
@@ -213,7 +256,8 @@ export const gitRouter = router({
 			return { commits };
 		}),
 
-	getCommitFiles: protectedProcedure
+	getCommitFiles: queryProcedure
+		.meta({ timeoutMs: 15_000 })
 		.input(
 			z.object({
 				workspaceId: z.string(),
@@ -229,6 +273,60 @@ export const gitRouter = router({
 			const files = await getChangedFilesForDiff(git, [from, input.commitHash]);
 
 			return { files };
+		}),
+
+	getBaseBranch: queryProcedure
+		.input(z.object({ workspaceId: z.string() }))
+		.query(async ({ ctx, input }) => {
+			const worktreePath = resolveWorktreePath(ctx, input.workspaceId);
+			const git = await ctx.git(worktreePath);
+			const currentBranch = (
+				await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")
+			).trim();
+			if (!currentBranch || currentBranch === "HEAD") {
+				return { baseBranch: null as string | null };
+			}
+			const configured = (
+				await git
+					.raw(["config", `branch.${currentBranch}.base`])
+					.catch(() => "")
+			).trim();
+			return { baseBranch: (configured || null) as string | null };
+		}),
+
+	setBaseBranch: protectedProcedure
+		.input(
+			z.object({
+				workspaceId: z.string(),
+				baseBranch: z.string().nullable(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const worktreePath = resolveWorktreePath(ctx, input.workspaceId);
+			const git = await ctx.git(worktreePath);
+			const currentBranch = (
+				await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")
+			).trim();
+			if (!currentBranch || currentBranch === "HEAD") {
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "Cannot set base branch on detached HEAD",
+				});
+			}
+			if (input.baseBranch) {
+				await gitConfigWrite(git, [
+					"config",
+					`branch.${currentBranch}.base`,
+					input.baseBranch,
+				]);
+			} else {
+				await gitConfigWrite(git, [
+					"config",
+					"--unset",
+					`branch.${currentBranch}.base`,
+				]).catch(() => {});
+			}
+			return { baseBranch: input.baseBranch };
 		}),
 
 	renameBranch: protectedProcedure
@@ -266,7 +364,8 @@ export const gitRouter = router({
 			return { name: input.newName };
 		}),
 
-	getDiff: protectedProcedure
+	getDiff: queryProcedure
+		.meta({ timeoutMs: 30_000 })
 		.input(
 			z.object({
 				workspaceId: z.string(),
@@ -285,11 +384,17 @@ export const gitRouter = router({
 			let modifiedContent = "";
 
 			if (input.category === "against-base") {
-				const baseBranch =
-					input.baseBranch ?? (await getDefaultBranchName(git));
-				const baseRef = baseBranch ? `origin/${baseBranch}` : "HEAD";
+				const base = await resolveBaseComparison(git, input.baseBranch);
+				const baseRef = base?.baseRef ?? "HEAD";
+				// Use the merge base so the diff excludes unrelated changes
+				// landed on the base branch after we forked — matches what the
+				// file list (3-dot diff) is already filtered by.
+				const originRef = await git
+					.raw(["merge-base", baseRef, "HEAD"])
+					.then((s) => s.trim())
+					.catch(() => baseRef);
 				try {
-					originalContent = await git.show([`${baseRef}:${input.path}`]);
+					originalContent = await git.show([`${originRef}:${input.path}`]);
 				} catch {}
 				try {
 					modifiedContent = await git.show([`HEAD:${input.path}`]);
@@ -338,7 +443,75 @@ export const gitRouter = router({
 			};
 		}),
 
-	getPullRequest: protectedProcedure
+	getBranchSyncStatus: queryProcedure
+		.meta({ timeoutMs: 30_000 })
+		.input(z.object({ workspaceId: z.string() }))
+		.query(async ({ ctx, input }) => {
+			const worktreePath = resolveWorktreePath(ctx, input.workspaceId);
+			const git = await ctx.git(worktreePath);
+
+			const currentBranch = (
+				await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")
+			).trim();
+			const isDetached = !currentBranch || currentBranch === "HEAD";
+
+			const defaultBranch = await getDefaultBranchName(git);
+			const isDefaultBranch =
+				!isDetached && !!defaultBranch && currentBranch === defaultBranch;
+
+			const remotes = await git.getRemotes(false).catch(() => []);
+			const hasRepo = remotes.length > 0;
+
+			let hasUpstream = false;
+			let pushCount = 0;
+			let pullCount = 0;
+			try {
+				await git.raw(["rev-parse", "--abbrev-ref", "@{upstream}"]);
+				hasUpstream = true;
+				const tracking = await git.raw([
+					"rev-list",
+					"--left-right",
+					"--count",
+					"@{upstream}...HEAD",
+				]);
+				const [pullStr, pushStr] = tracking.trim().split(/\s+/);
+				pullCount = Number.parseInt(pullStr || "0", 10);
+				pushCount = Number.parseInt(pushStr || "0", 10);
+			} catch {
+				// no upstream — counts stay zero
+			}
+
+			// Read working-tree status separately from branch info so a transient
+			// `git status` failure (e.g. lock contention during a concurrent
+			// operation) doesn't poison the whole sync read. Log on failure so it
+			// isn't silent — `hasUncommitted` defaults to false in that case
+			// because over-reporting "uncommitted" on every blip is more annoying
+			// than under-reporting briefly until the next refetch.
+			let hasUncommitted = false;
+			try {
+				const status = await git.status();
+				hasUncommitted = status.files.length > 0;
+			} catch (error) {
+				console.warn(
+					"[git/getBranchSyncStatus] git.status() failed; treating working tree as clean for this read",
+					error,
+				);
+			}
+
+			return {
+				hasRepo,
+				hasUpstream,
+				pushCount,
+				pullCount,
+				isDefaultBranch,
+				isDetached,
+				hasUncommitted,
+				currentBranch: isDetached ? null : currentBranch,
+				defaultBranch,
+			};
+		}),
+
+	getPullRequest: queryProcedure
 		.input(z.object({ workspaceId: z.string() }))
 		.query(({ ctx, input }) => {
 			const workspace = ctx.db.query.workspaces
@@ -392,10 +565,13 @@ export const gitRouter = router({
 				headRefName: pr.headBranch ?? "",
 				updatedAt: pr.updatedAt ? new Date(pr.updatedAt).toISOString() : "",
 				checks,
+				repoOwner: pr.repoOwner,
+				repoName: pr.repoName,
 			};
 		}),
 
-	getPullRequestThreads: protectedProcedure
+	getPullRequestThreads: queryProcedure
+		.meta({ timeoutMs: 30_000 })
 		.input(z.object({ workspaceId: z.string() }))
 		.query(async ({ ctx, input }) => {
 			const workspace = ctx.db.query.workspaces

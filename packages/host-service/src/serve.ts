@@ -5,6 +5,7 @@ import { JwtApiAuthProvider } from "./providers/auth";
 import { LocalGitCredentialProvider } from "./providers/git";
 import { PskHostAuthProvider } from "./providers/host-auth";
 import { LocalModelProvider } from "./providers/model-providers";
+import { installProcessSafetyNet } from "./safety";
 import { initTerminalBaseEnv, resolveTerminalBaseEnv } from "./terminal/env";
 import { connectRelay } from "./tunnel";
 
@@ -14,14 +15,14 @@ async function main(): Promise<void> {
 
 	const authProvider = new JwtApiAuthProvider(
 		env.AUTH_TOKEN,
-		env.CLOUD_API_URL,
+		env.SUPERSET_API_URL,
 	);
 
 	const { app, injectWebSocket, api } = createApp({
 		config: {
 			organizationId: env.ORGANIZATION_ID,
 			dbPath: env.HOST_DB_PATH,
-			cloudApiUrl: env.CLOUD_API_URL,
+			cloudApiUrl: env.SUPERSET_API_URL,
 			migrationsFolder: env.HOST_MIGRATIONS_FOLDER,
 			allowedOrigins: env.CORS_ORIGINS ?? [],
 		},
@@ -34,6 +35,9 @@ async function main(): Promise<void> {
 	});
 
 	const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
+		// Install only after the server is listening so startup throws still
+		// reach `main().catch(...)` and exit with a non-zero code.
+		installProcessSafetyNet();
 		console.log(`[host-service] listening on http://localhost:${info.port}`);
 
 		if (env.RELAY_URL) {

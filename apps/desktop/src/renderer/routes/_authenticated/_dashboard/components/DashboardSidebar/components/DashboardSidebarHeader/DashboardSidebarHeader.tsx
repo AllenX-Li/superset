@@ -1,10 +1,30 @@
+import { FEATURE_FLAGS } from "@superset/shared/constants";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@superset/ui/dropdown-menu";
+import { toast } from "@superset/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
 import { cn } from "@superset/ui/utils";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { LuFolderPlus, LuLayers, LuPlus } from "react-icons/lu";
+import { useFeatureFlagEnabled } from "posthog-js/react";
+import { HiMiniPlus, HiOutlineClipboardDocumentList } from "react-icons/hi2";
+import {
+	LuClock,
+	LuFolderInput,
+	LuFolderPlus,
+	LuLayers,
+	LuPlus,
+} from "react-icons/lu";
+import { GATED_FEATURES, usePaywall } from "renderer/components/Paywall";
 import { useHotkeyDisplay } from "renderer/hotkeys";
+import { useFolderFirstImport } from "renderer/routes/_authenticated/_dashboard/components/AddRepositoryModals/hooks/useFolderFirstImport";
 import { OrganizationDropdown } from "renderer/routes/_authenticated/_dashboard/components/TopBar/components/OrganizationDropdown";
+import { useTasksFilterStore } from "renderer/routes/_authenticated/_dashboard/tasks/stores/tasks-filter-state";
 import { STROKE_WIDTH_THICK } from "renderer/screens/main/components/WorkspaceSidebar/constants";
+import { useOpenNewProjectModal } from "renderer/stores/add-repository-modal";
 import { useOpenNewWorkspaceModal } from "renderer/stores/new-workspace-modal";
 
 interface DashboardSidebarHeaderProps {
@@ -15,13 +35,64 @@ export function DashboardSidebarHeader({
 	isCollapsed = false,
 }: DashboardSidebarHeaderProps) {
 	const openModal = useOpenNewWorkspaceModal();
-	const shortcutText = useHotkeyDisplay("NEW_WORKSPACE").text;
+	const openNewProject = useOpenNewProjectModal();
 	const navigate = useNavigate();
+	const folderImport = useFolderFirstImport({
+		onError: (message) => {
+			toast.error(`Import failed: ${message}`);
+		},
+		onMultipleProjects: ({ candidates }) => {
+			toast.error("Import failed", {
+				description: `Multiple projects use this repository (${candidates.length}). Choose the project in settings to set it up on this device.`,
+				action: {
+					label: "Open Projects",
+					onClick: () => navigate({ to: "/settings/projects" }),
+				},
+			});
+		},
+	});
+
+	const handleImportFolder = async () => {
+		const result = await folderImport.start();
+		if (result) {
+			toast.success("Project ready — open it from the sidebar.");
+		}
+	};
+	const shortcutText = useHotkeyDisplay("NEW_WORKSPACE").text;
 	const matchRoute = useMatchRoute();
+	const { gateFeature } = usePaywall();
 	const isWorkspacesListOpen = !!matchRoute({ to: "/v2-workspaces" });
+	const isTasksOpen = !!matchRoute({ to: "/tasks", fuzzy: true });
+	const isAutomationsOpen = !!matchRoute({ to: "/automations", fuzzy: true });
+
+	const showAutomations = useFeatureFlagEnabled(
+		FEATURE_FLAGS.AUTOMATIONS_ACCESS,
+	);
+
+	const {
+		tab: lastTab,
+		assignee: lastAssignee,
+		search: lastSearch,
+	} = useTasksFilterStore();
 
 	const handleWorkspacesClick = () => {
 		navigate({ to: "/v2-workspaces" });
+	};
+
+	const handleAutomationsClick = () => {
+		gateFeature(GATED_FEATURES.AUTOMATIONS, () => {
+			navigate({ to: "/automations" });
+		});
+	};
+
+	const handleTasksClick = () => {
+		gateFeature(GATED_FEATURES.TASKS, () => {
+			const search: Record<string, string> = {};
+			if (lastTab !== "all") search.tab = lastTab;
+			if (lastAssignee) search.assignee = lastAssignee;
+			if (lastSearch) search.search = lastSearch;
+			navigate({ to: "/tasks", search });
+		});
 	};
 
 	if (isCollapsed) {
@@ -51,13 +122,39 @@ export function DashboardSidebarHeader({
 					<TooltipTrigger asChild>
 						<button
 							type="button"
-							className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+							onClick={handleTasksClick}
+							className={cn(
+								"flex size-8 items-center justify-center rounded-md transition-colors",
+								isTasksOpen
+									? "bg-accent text-foreground"
+									: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+							)}
 						>
-							<LuFolderPlus className="size-4" />
+							<HiOutlineClipboardDocumentList className="size-4" />
 						</button>
 					</TooltipTrigger>
-					<TooltipContent side="right">Add Repository</TooltipContent>
+					<TooltipContent side="right">Tasks</TooltipContent>
 				</Tooltip>
+
+				{showAutomations && (
+					<Tooltip delayDuration={300}>
+						<TooltipTrigger asChild>
+							<button
+								type="button"
+								onClick={handleAutomationsClick}
+								className={cn(
+									"flex size-8 items-center justify-center rounded-md transition-colors",
+									isAutomationsOpen
+										? "bg-accent text-foreground"
+										: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+								)}
+							>
+								<LuClock className="size-4" />
+							</button>
+						</TooltipTrigger>
+						<TooltipContent side="right">Automations</TooltipContent>
+					</Tooltip>
+				)}
 
 				<Tooltip delayDuration={300}>
 					<TooltipTrigger asChild>
@@ -73,28 +170,40 @@ export function DashboardSidebarHeader({
 						New Workspace ({shortcutText})
 					</TooltipContent>
 				</Tooltip>
+
+				<DropdownMenu>
+					<Tooltip delayDuration={300}>
+						<TooltipTrigger asChild>
+							<DropdownMenuTrigger asChild>
+								<button
+									type="button"
+									aria-label="Add repository"
+									className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+								>
+									<LuFolderPlus className="size-4" />
+								</button>
+							</DropdownMenuTrigger>
+						</TooltipTrigger>
+						<TooltipContent side="right">Add repository</TooltipContent>
+					</Tooltip>
+					<DropdownMenuContent align="start">
+						<DropdownMenuItem onSelect={() => openNewProject()}>
+							<HiMiniPlus className="size-4" />
+							Create new project
+						</DropdownMenuItem>
+						<DropdownMenuItem onSelect={handleImportFolder}>
+							<LuFolderInput className="size-4" />
+							Import project
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</div>
 		);
 	}
 
 	return (
 		<div className="flex flex-col gap-1 border-b border-border px-2 pt-2 pb-2">
-			<div className="flex items-center gap-1">
-				<div className="flex-1 min-w-0">
-					<OrganizationDropdown variant="expanded" />
-				</div>
-				<Tooltip delayDuration={300}>
-					<TooltipTrigger asChild>
-						<button
-							type="button"
-							className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-						>
-							<LuFolderPlus className="size-4" />
-						</button>
-					</TooltipTrigger>
-					<TooltipContent side="right">Add Repository</TooltipContent>
-				</Tooltip>
-			</div>
+			<OrganizationDropdown variant="expanded" />
 
 			<button
 				type="button"
@@ -110,22 +219,83 @@ export function DashboardSidebarHeader({
 				<span className="flex-1 text-left">Workspaces</span>
 			</button>
 
-			<button
-				type="button"
-				onClick={() => openModal()}
-				className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-			>
-				<LuPlus className="size-4 shrink-0" strokeWidth={STROKE_WIDTH_THICK} />
-				<span className="flex-1 text-left">New Workspace</span>
-				<span
+			{showAutomations && (
+				<button
+					type="button"
+					onClick={handleAutomationsClick}
 					className={cn(
-						"shrink-0 text-[10px] font-mono tabular-nums text-muted-foreground/60",
-						"opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100",
+						"flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium transition-colors",
+						isAutomationsOpen
+							? "bg-accent text-foreground"
+							: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
 					)}
 				>
-					{shortcutText}
-				</span>
+					<LuClock className="size-4 shrink-0" />
+					<span className="flex-1 text-left">Automations</span>
+				</button>
+			)}
+
+			<button
+				type="button"
+				onClick={handleTasksClick}
+				className={cn(
+					"flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium transition-colors",
+					isTasksOpen
+						? "bg-accent text-foreground"
+						: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+				)}
+			>
+				<HiOutlineClipboardDocumentList className="size-4 shrink-0" />
+				<span className="flex-1 text-left">Tasks</span>
 			</button>
+
+			<div className="flex items-center gap-1">
+				<button
+					type="button"
+					onClick={() => openModal()}
+					className="group flex flex-1 min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+				>
+					<LuPlus
+						className="size-4 shrink-0"
+						strokeWidth={STROKE_WIDTH_THICK}
+					/>
+					<span className="flex-1 text-left">New Workspace</span>
+					<span
+						className={cn(
+							"shrink-0 text-[10px] font-mono tabular-nums text-muted-foreground/60",
+							"opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100",
+						)}
+					>
+						{shortcutText}
+					</span>
+				</button>
+				<DropdownMenu>
+					<Tooltip delayDuration={300}>
+						<TooltipTrigger asChild>
+							<DropdownMenuTrigger asChild>
+								<button
+									type="button"
+									aria-label="Add repository"
+									className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+								>
+									<LuFolderPlus className="size-4" />
+								</button>
+							</DropdownMenuTrigger>
+						</TooltipTrigger>
+						<TooltipContent side="right">Add repository</TooltipContent>
+					</Tooltip>
+					<DropdownMenuContent align="end">
+						<DropdownMenuItem onSelect={() => openNewProject()}>
+							<HiMiniPlus className="size-4" />
+							Create new project
+						</DropdownMenuItem>
+						<DropdownMenuItem onSelect={handleImportFolder}>
+							<LuFolderInput className="size-4" />
+							Import project
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</div>
 		</div>
 	);
 }

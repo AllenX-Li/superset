@@ -11,25 +11,23 @@ export default command({
 			.enum("urgent", "high", "medium", "low", "none")
 			.desc("Priority"),
 		assignee: string().desc("Assignee user ID"),
-		branch: string().desc("Git branch"),
 	},
 	run: async ({ ctx, args, options }) => {
 		const idOrSlug = args.idOrSlug as string;
-		const taskRow = await ctx.api.task.bySlug.query(idOrSlug);
-		if (!taskRow) throw new CLIError(`Task not found: ${idOrSlug}`);
+		const task = await ctx.api.task.byIdOrSlug.query(idOrSlug);
+		if (!task) throw new CLIError(`Task not found: ${idOrSlug}`);
 
 		const result = await ctx.api.task.update.mutate({
-			id: taskRow.task.id,
+			id: task.id,
 			title: options.title ?? undefined,
 			description: options.description ?? undefined,
 			priority: options.priority ?? undefined,
 			assigneeId: options.assignee ?? undefined,
-			branch: options.branch ?? undefined,
 		});
 
 		return {
 			data: result.task,
-			message: `Updated task ${taskRow.task.slug}`,
+			message: `Updated task ${task.slug}`,
 		};
 	},
 });

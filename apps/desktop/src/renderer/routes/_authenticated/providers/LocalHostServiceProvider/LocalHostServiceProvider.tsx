@@ -10,7 +10,7 @@ import { setHostServiceSecret } from "renderer/lib/host-service-auth";
 import { MOCK_ORG_ID } from "shared/constants";
 
 interface LocalHostServiceContextValue {
-	machineId: string | null;
+	machineId: string;
 	activeHostUrl: string | null;
 }
 
@@ -31,15 +31,23 @@ export function LocalHostServiceProvider({
 		startHostService({ organizationId: MOCK_ORG_ID });
 	}, [startHostService]);
 
+	const { data: machineIdData } = electronTrpc.device.getMachineId.useQuery(
+		undefined,
+		{ staleTime: Number.POSITIVE_INFINITY },
+	);
+
 	const { data: activeConnection } =
 		electronTrpc.hostServiceCoordinator.getConnection.useQuery(
 			{ organizationId: activeOrganizationId as string },
 			{ enabled: !!activeOrganizationId, refetchInterval: 5_000 },
 		);
 
-	const value = useMemo(() => {
+	const value = useMemo<LocalHostServiceContextValue | null>(() => {
+		if (!machineIdData) return null;
+		const machineId = machineIdData.machineId;
+
 		if (!activeConnection?.port) {
-			return { machineId: null, activeHostUrl: null };
+			return { machineId, activeHostUrl: null };
 		}
 
 		const activeHostUrl = `http://127.0.0.1:${activeConnection.port}`;
@@ -47,11 +55,10 @@ export function LocalHostServiceProvider({
 			setHostServiceSecret(activeHostUrl, activeConnection.secret);
 		}
 
-		return {
-			machineId: activeConnection.machineId ?? null,
-			activeHostUrl,
-		};
-	}, [activeConnection]);
+		return { machineId, activeHostUrl };
+	}, [machineIdData, activeConnection]);
+
+	if (!value) return null;
 
 	return (
 		<LocalHostServiceContext.Provider value={value}>

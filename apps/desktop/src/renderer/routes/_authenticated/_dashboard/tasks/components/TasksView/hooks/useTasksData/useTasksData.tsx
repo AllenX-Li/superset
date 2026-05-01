@@ -29,7 +29,6 @@ export function useTasksData({
 }: UseTasksDataParams): {
 	data: TaskWithStatus[];
 	allStatuses: SelectTaskStatus[];
-	isLoading: boolean;
 } {
 	const { activeHostUrl } = useLocalHostService();
 

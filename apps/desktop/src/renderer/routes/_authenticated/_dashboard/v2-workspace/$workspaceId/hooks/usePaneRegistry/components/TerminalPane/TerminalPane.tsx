@@ -1,48 +1,64 @@
 import type { RendererContext } from "@superset/panes";
-import { toast } from "@superset/ui/sonner";
+import { cn } from "@superset/ui/utils";
 import { workspaceTrpc } from "@superset/workspace-client";
 import "@xterm/xterm/css/xterm.css";
 import {
+	useCallback,
 	useEffect,
 	useMemo,
 	useRef,
 	useState,
 	useSyncExternalStore,
 } from "react";
+import { useTerminalLinkActions } from "renderer/hooks/useV2UserPreferences";
 import { useHotkey } from "renderer/hotkeys";
 import {
 	type ConnectionState,
 	terminalRuntimeRegistry,
 } from "renderer/lib/terminal/terminal-runtime-registry";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
+import { useOpenInExternalEditor } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/hooks/useOpenInExternalEditor";
 import type {
 	PaneViewerData,
 	TerminalPaneData,
 } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/types";
+import { openUrlInV2Workspace } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/utils/openUrlInV2Workspace";
 import { useWorkspaceWsUrl } from "renderer/routes/_authenticated/_dashboard/v2-workspace/providers/WorkspaceTrpcProvider/WorkspaceTrpcProvider";
 import { ScrollToBottomButton } from "renderer/screens/main/components/WorkspaceView/ContentView/TabsContent/Terminal/ScrollToBottomButton";
 import { TerminalSearch } from "renderer/screens/main/components/WorkspaceView/ContentView/TabsContent/Terminal/TerminalSearch";
 import { useTheme } from "renderer/stores/theme";
 import { resolveTerminalThemeType } from "renderer/stores/theme/utils";
+import { LinkHoverTooltip } from "./components/LinkHoverTooltip";
+import { useLinkClickHint } from "./hooks/useLinkClickHint";
+import { useLinkHoverState } from "./hooks/useLinkHoverState";
 import { useTerminalAppearance } from "./hooks/useTerminalAppearance";
+import { shellEscapePaths } from "./utils";
 
 interface TerminalPaneProps {
 	ctx: RendererContext<PaneViewerData>;
 	workspaceId: string;
+	onOpenFile: (path: string, openInNewTab?: boolean) => void;
+	onRevealPath: (path: string, options?: { isDirectory?: boolean }) => void;
 }
 
-function subscribeToState(terminalId: string) {
-	return (callback: () => void) =>
-		terminalRuntimeRegistry.onStateChange(terminalId, callback);
-}
-
-function getConnectionState(terminalId: string): ConnectionState {
-	return terminalRuntimeRegistry.getConnectionState(terminalId);
-}
-
-export function TerminalPane({ ctx, workspaceId }: TerminalPaneProps) {
+export function TerminalPane({
+	ctx,
+	workspaceId,
+	onOpenFile,
+	onRevealPath,
+}: TerminalPaneProps) {
+	const { getFileAction, getUrlAction } = useTerminalLinkActions();
+	const {
+		hoveredLink,
+		onHover: onLinkHover,
+		onLeave: onLinkLeave,
+	} = useLinkHoverState();
+	const { hint, showHint } = useLinkClickHint();
+	const openInExternalEditor = useOpenInExternalEditor(workspaceId);
 	const paneData = ctx.pane.data as TerminalPaneData;
 	const { terminalId } = paneData;
+	const initialCommandRef = useRef(paneData.initialCommand);
+	const terminalInstanceId = ctx.pane.id;
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const activeTheme = useTheme();
 	const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -57,64 +73,144 @@ export function TerminalPane({ ctx, workspaceId }: TerminalPaneProps) {
 			activeThemeType: activeTheme?.type,
 		}),
 	);
-	const initialThemeType = initialThemeTypeRef.current;
 
-	// URL is stable — no workspaceId/themeType in query params.
-	// Session is created via tRPC before WebSocket connects.
-	const websocketUrl = useWorkspaceWsUrl(`/terminal/${terminalId}`);
+	// Include workspaceId/themeType so the WebSocket route can create the
+	// session on open. Terminal attach should not wait behind workspace tRPC.
+	const websocketUrl = useWorkspaceWsUrl(`/terminal/${terminalId}`, {
+		workspaceId,
+		themeType: initialThemeTypeRef.current,
+	});
+	const websocketUrlRef = useRef(websocketUrl);
+	websocketUrlRef.current = websocketUrl;
+	const workspaceIdRef = useRef(workspaceId);
+	workspaceIdRef.current = workspaceId;
 
-	const ensureSession = workspaceTrpc.terminal.ensureSession.useMutation();
-	const ensureSessionRef = useRef(ensureSession);
-	ensureSessionRef.current = ensureSession;
-
-	const connectionState = useSyncExternalStore(
-		subscribeToState(terminalId),
-		() => getConnectionState(terminalId),
+	const workspaceTrpcUtils = workspaceTrpc.useUtils();
+	const invalidateTerminalSessionsRef = useRef(
+		workspaceTrpcUtils.terminal.listSessions.invalidate,
 	);
+	invalidateTerminalSessionsRef.current =
+		workspaceTrpcUtils.terminal.listSessions.invalidate;
 
+	// useCallback so useSyncExternalStore doesn't re-subscribe every render —
+	// otherwise every keystroke-triggered re-render unsubscribes and
+	// re-subscribes the registry listener. See React's useSyncExternalStore
+	// docs ("If you don't memoize the subscribe function…").
+	const subscribe = useCallback(
+		(callback: () => void) =>
+			terminalRuntimeRegistry.onStateChange(
+				terminalId,
+				callback,
+				terminalInstanceId,
+			),
+		[terminalId, terminalInstanceId],
+	);
+	const getSnapshot = useCallback(
+		(): ConnectionState =>
+			terminalRuntimeRegistry.getConnectionState(
+				terminalId,
+				terminalInstanceId,
+			),
+		[terminalId, terminalInstanceId],
+	);
+	const connectionState = useSyncExternalStore(subscribe, getSnapshot);
+
+	// DOM-first lifecycle (VSCode/Tabby pattern):
+	//   1. mount() attaches xterm to the container synchronously — terminal
+	//      is visible immediately, even on cold start. For a warm return
+	//      (workspace switch) this reparents the wrapper from the parking
+	//      container back into the live tree, preserving the buffer.
+	//   2. connect() opens the WebSocket immediately. The host-service terminal
+	//      route creates the session from the URL workspaceId if needed, avoiding
+	//      tRPC head-of-line blocking during workspace switches.
+	// Deps narrowed to the terminal identity so provider key remount churn
+	// (workspaceId briefly flipping while pane data catches up) doesn't re-run
+	// this effect. workspaceId / websocketUrl are read through refs.
 	useEffect(() => {
 		const container = containerRef.current;
 		if (!container) return;
 
-		let cancelled = false;
+		terminalRuntimeRegistry.mount(
+			terminalId,
+			container,
+			appearanceRef.current,
+			terminalInstanceId,
+		);
 
-		// Create session via tRPC, then connect WebSocket as data pipe.
-		ensureSessionRef.current
-			.mutateAsync({
-				terminalId,
-				workspaceId,
-				themeType: initialThemeType,
-			})
-			.then(() => {
-				if (cancelled) return;
-				terminalRuntimeRegistry.attach(
-					terminalId,
-					container,
-					websocketUrl,
-					appearanceRef.current,
-				);
-			})
-			.catch((err) => {
-				if (cancelled) return;
-				console.error("[TerminalPane] ensureSession failed:", err);
-				// Still try to connect — WS handler has fallback for existing sessions
-				terminalRuntimeRegistry.attach(
-					terminalId,
-					container,
-					websocketUrl,
-					appearanceRef.current,
-				);
-			});
+		terminalRuntimeRegistry.connect(
+			terminalId,
+			websocketUrlRef.current,
+			terminalInstanceId,
+			{ initialCommand: initialCommandRef.current },
+		);
 
 		return () => {
-			cancelled = true;
-			terminalRuntimeRegistry.detach(terminalId);
+			terminalRuntimeRegistry.detach(terminalId, terminalInstanceId);
 		};
-	}, [terminalId, websocketUrl, initialThemeType, workspaceId]);
+	}, [terminalId, terminalInstanceId]);
 
 	useEffect(() => {
-		terminalRuntimeRegistry.updateAppearance(terminalId, appearance);
-	}, [terminalId, appearance]);
+		if (connectionState !== "open" || !initialCommandRef.current) return;
+
+		initialCommandRef.current = undefined;
+		if (paneData.initialCommand === undefined) return;
+
+		ctx.actions.updateData({
+			...paneData,
+			initialCommand: undefined,
+		} as PaneViewerData);
+	}, [connectionState, ctx.actions, paneData]);
+
+	const lastInvalidatedOpenSessionRef = useRef<string | null>(null);
+	useEffect(() => {
+		const invalidateSessionsAfterSocketOpen = () => {
+			if (
+				terminalRuntimeRegistry.getConnectionState(
+					terminalId,
+					terminalInstanceId,
+				) !== "open"
+			) {
+				lastInvalidatedOpenSessionRef.current = null;
+				return;
+			}
+
+			const sessionWorkspaceId = workspaceIdRef.current;
+			const invalidateKey = `${sessionWorkspaceId}:${terminalId}:${terminalInstanceId}:${websocketUrlRef.current}`;
+			if (lastInvalidatedOpenSessionRef.current === invalidateKey) return;
+			lastInvalidatedOpenSessionRef.current = invalidateKey;
+
+			void invalidateTerminalSessionsRef.current({
+				workspaceId: sessionWorkspaceId,
+			});
+		};
+
+		invalidateSessionsAfterSocketOpen();
+		return terminalRuntimeRegistry.onStateChange(
+			terminalId,
+			invalidateSessionsAfterSocketOpen,
+			terminalInstanceId,
+		);
+	}, [terminalId, terminalInstanceId]);
+
+	// WS URL can change while the terminal stays mounted (token refresh, host
+	// URL re-resolution on provider remount). Reconnect only if the transport
+	// is already live — on initial mount the transport is "disconnected" and
+	// we let the mount path above open it.
+	useEffect(() => {
+		terminalRuntimeRegistry.reconnect(
+			terminalId,
+			websocketUrl,
+			terminalInstanceId,
+		);
+	}, [terminalId, terminalInstanceId, websocketUrl]);
+
+	useEffect(() => {
+		terminalRuntimeRegistry.updateAppearance(
+			terminalId,
+			appearance,
+			terminalInstanceId,
+		);
+	}, [terminalId, terminalInstanceId, appearance]);
 
 	// --- Link handlers ---
 	// All filesystem operations go through the host service.
@@ -125,48 +221,99 @@ export function TerminalPane({ ctx, workspaceId }: TerminalPaneProps) {
 	statPathRef.current = statPathMutation.mutateAsync;
 
 	useEffect(() => {
-		terminalRuntimeRegistry.setLinkHandlers(terminalId, {
-			stat: async (path) => {
-				try {
-					const result = await statPathRef.current({
-						workspaceId,
-						path,
-					});
-					if (!result) return null;
-					return {
-						isDirectory: result.isDirectory,
-						resolvedPath: result.resolvedPath,
-					};
-				} catch {
-					return null;
-				}
+		terminalRuntimeRegistry.setLinkHandlers(
+			terminalId,
+			{
+				stat: async (path) => {
+					try {
+						const result = await statPathRef.current({
+							workspaceId,
+							path,
+						});
+						if (!result) return null;
+						return {
+							isDirectory: result.isDirectory,
+							resolvedPath: result.resolvedPath,
+						};
+					} catch {
+						return null;
+					}
+				},
+				onFileLinkClick: (event, link) => {
+					// Folders are not settings-controlled: ⌘ reveals in sidebar,
+					// ⌘⇧ falls through to the external editor path, plain = hint.
+					if (link.isDirectory) {
+						if (!event.metaKey && !event.ctrlKey) {
+							showHint(event.clientX, event.clientY);
+							return;
+						}
+						event.preventDefault();
+						if (event.shiftKey) {
+							openInExternalEditor(link.resolvedPath);
+						} else {
+							onRevealPath(link.resolvedPath, { isDirectory: true });
+						}
+						return;
+					}
+
+					const action = getFileAction(event);
+					if (action === null) {
+						showHint(event.clientX, event.clientY);
+						return;
+					}
+					event.preventDefault();
+					if (action === "external") {
+						openInExternalEditor(link.resolvedPath, {
+							line: link.row,
+							column: link.col,
+						});
+					} else {
+						onOpenFile(link.resolvedPath);
+					}
+				},
+				onUrlClick: (event, url) => {
+					const action = getUrlAction(event);
+					if (action === null) {
+						showHint(event.clientX, event.clientY);
+						return;
+					}
+					event.preventDefault();
+					if (action === "external") {
+						electronTrpcClient.external.openUrl.mutate(url).catch((error) => {
+							console.error("[v2 Terminal] Failed to open URL:", url, error);
+						});
+					} else {
+						openUrlInV2Workspace({
+							store: ctx.store,
+							target: "current-tab",
+							url,
+						});
+					}
+				},
+				onLinkHover,
+				onLinkLeave,
 			},
-			onFileLinkClick: (_event, link) => {
-				if (!_event.metaKey && !_event.ctrlKey) return;
-				_event.preventDefault();
-				electronTrpcClient.external.openFileInEditor
-					.mutate({
-						path: link.resolvedPath,
-						line: link.row,
-						column: link.col,
-					})
-					.catch((error) => {
-						console.error("[v2 Terminal] Failed to open file:", error);
-						toast.error("Failed to open file in editor");
-					});
-			},
-			onUrlClick: (url) => {
-				electronTrpcClient.external.openUrl.mutate(url).catch((error) => {
-					console.error("[v2 Terminal] Failed to open URL:", url, error);
-				});
-			},
-		});
-	}, [terminalId, workspaceId]);
+			terminalInstanceId,
+		);
+	}, [
+		terminalId,
+		terminalInstanceId,
+		workspaceId,
+		ctx.store,
+		onOpenFile,
+		onRevealPath,
+		openInExternalEditor,
+		onLinkHover,
+		onLinkLeave,
+		showHint,
+		getFileAction,
+		getUrlAction,
+	]);
 
 	useHotkey(
 		"CLEAR_TERMINAL",
 		() => {
-			terminalRuntimeRegistry.clear(terminalId);
+			terminalRuntimeRegistry.clear(terminalId, terminalInstanceId);
 		},
 		{ enabled: ctx.isActive },
 	);
@@ -174,7 +321,7 @@ export function TerminalPane({ ctx, workspaceId }: TerminalPaneProps) {
 	useHotkey(
 		"SCROLL_TO_BOTTOM",
 		() => {
-			terminalRuntimeRegistry.scrollToBottom(terminalId);
+			terminalRuntimeRegistry.scrollToBottom(terminalId, terminalInstanceId);
 		},
 		{ enabled: ctx.isActive },
 	);
@@ -187,18 +334,74 @@ export function TerminalPane({ ctx, workspaceId }: TerminalPaneProps) {
 	// connectionState in deps ensures terminal ref re-derives after connect/disconnect
 	// biome-ignore lint/correctness/useExhaustiveDependencies: connectionState is intentionally included to trigger re-derive
 	const terminal = useMemo(
-		() => terminalRuntimeRegistry.getTerminal(terminalId),
-		[terminalId, connectionState],
+		() => terminalRuntimeRegistry.getTerminal(terminalId, terminalInstanceId),
+		[terminalId, terminalInstanceId, connectionState],
 	);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: connectionState is intentionally included to trigger re-derive
 	const searchAddon = useMemo(
-		() => terminalRuntimeRegistry.getSearchAddon(terminalId),
-		[terminalId, connectionState],
+		() =>
+			terminalRuntimeRegistry.getSearchAddon(terminalId, terminalInstanceId),
+		[terminalId, terminalInstanceId, connectionState],
 	);
 
+	const [isDropActive, setIsDropActive] = useState(false);
+	const dragCounterRef = useRef(0);
+
+	const resolveDroppedText = (dataTransfer: DataTransfer): string | null => {
+		const files = Array.from(dataTransfer.files);
+		if (files.length > 0) {
+			const paths = files
+				.map((file) => window.webUtils.getPathForFile(file))
+				.filter(Boolean);
+			return paths.length > 0 ? shellEscapePaths(paths) : null;
+		}
+		const plainText = dataTransfer.getData("text/plain");
+		return plainText ? shellEscapePaths([plainText]) : null;
+	};
+
+	const handleDragEnter = (event: React.DragEvent) => {
+		event.preventDefault();
+		dragCounterRef.current += 1;
+		setIsDropActive(true);
+	};
+
+	const handleDragOver = (event: React.DragEvent) => {
+		event.preventDefault();
+		event.dataTransfer.dropEffect = "copy";
+	};
+
+	const handleDragLeave = (event: React.DragEvent) => {
+		event.preventDefault();
+		dragCounterRef.current -= 1;
+		if (dragCounterRef.current <= 0) {
+			dragCounterRef.current = 0;
+			setIsDropActive(false);
+		}
+	};
+
+	const handleDrop = (event: React.DragEvent) => {
+		event.preventDefault();
+		dragCounterRef.current = 0;
+		setIsDropActive(false);
+		if (connectionState === "closed") return;
+		const text = resolveDroppedText(event.dataTransfer);
+		if (!text) return;
+		terminalRuntimeRegistry
+			.getTerminal(terminalId, terminalInstanceId)
+			?.focus();
+		terminalRuntimeRegistry.paste(terminalId, text, terminalInstanceId);
+	};
+
 	return (
-		<div className="flex h-full w-full flex-col p-2">
+		<div
+			role="application"
+			className="relative flex h-full w-full flex-col p-2"
+			onDragEnter={handleDragEnter}
+			onDragOver={handleDragOver}
+			onDragLeave={handleDragLeave}
+			onDrop={handleDrop}
+		>
 			<div className="relative min-h-0 flex-1 overflow-hidden">
 				<TerminalSearch
 					searchAddon={searchAddon}
@@ -212,11 +415,18 @@ export function TerminalPane({ ctx, workspaceId }: TerminalPaneProps) {
 				/>
 				<ScrollToBottomButton terminal={terminal} />
 			</div>
+			<div
+				className={cn(
+					"pointer-events-none absolute inset-0 bg-primary/10 transition-opacity duration-100",
+					isDropActive ? "opacity-75" : "opacity-0",
+				)}
+			/>
 			{connectionState === "closed" && (
 				<div className="flex items-center gap-2 border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
 					<span>Disconnected</span>
 				</div>
 			)}
+			<LinkHoverTooltip hoveredLink={hoveredLink} hint={hint} />
 		</div>
 	);
 }

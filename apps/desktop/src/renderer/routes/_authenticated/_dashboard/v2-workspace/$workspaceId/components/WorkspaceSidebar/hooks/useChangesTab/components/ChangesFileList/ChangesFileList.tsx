@@ -1,28 +1,24 @@
-import { memo, useMemo } from "react";
+import { memo } from "react";
 import type { ChangesetFile } from "../../../../../../hooks/useChangeset";
 import { FileRow } from "./components/FileRow";
-import { partitionByViewed } from "./utils/partitionByViewed";
 
 interface ChangesFileListProps {
 	files: ChangesetFile[];
 	isLoading?: boolean;
-	onSelectFile?: (path: string) => void;
-	viewedSet: Set<string>;
-	onSetViewed: (path: string, next: boolean) => void;
+	worktreePath?: string;
+	onSelectFile?: (path: string, openInNewTab?: boolean) => void;
+	onOpenFile?: (absolutePath: string, openInNewTab?: boolean) => void;
+	onOpenInEditor?: (path: string) => void;
 }
 
 export const ChangesFileList = memo(function ChangesFileList({
 	files,
 	isLoading,
+	worktreePath,
 	onSelectFile,
-	viewedSet,
-	onSetViewed,
+	onOpenFile,
+	onOpenInEditor,
 }: ChangesFileListProps) {
-	const sortedFiles = useMemo(
-		() => partitionByViewed(files, viewedSet),
-		[files, viewedSet],
-	);
-
 	if (isLoading) {
 		return (
 			<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -41,13 +37,14 @@ export const ChangesFileList = memo(function ChangesFileList({
 
 	return (
 		<div className="min-h-0 flex-1 overflow-y-auto">
-			{sortedFiles.map((file) => (
+			{files.map((file) => (
 				<FileRow
 					key={`${file.source.kind}:${file.path}`}
 					file={file}
+					worktreePath={worktreePath}
 					onSelect={onSelectFile}
-					viewed={viewedSet.has(file.path)}
-					onSetViewed={onSetViewed}
+					onOpenFile={onOpenFile}
+					onOpenInEditor={onOpenInEditor}
 				/>
 			))}
 		</div>

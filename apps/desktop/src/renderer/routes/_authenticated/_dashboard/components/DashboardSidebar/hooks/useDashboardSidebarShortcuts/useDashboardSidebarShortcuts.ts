@@ -1,5 +1,5 @@
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useHotkey } from "renderer/hotkeys";
 import { navigateToV2Workspace } from "renderer/routes/_authenticated/_dashboard/utils/workspace-navigation";
 import { useDashboardSidebarState } from "renderer/routes/_authenticated/hooks/useDashboardSidebarState";
@@ -15,6 +15,38 @@ interface WorkspaceLocation {
 
 const MAX_SHORTCUT_COUNT = 9;
 
+function haveSameIds(left: string[], right: string[]): boolean {
+	return (
+		left.length === right.length &&
+		left.every((id, index) => id === right[index])
+	);
+}
+
+function useStableWorkspaceShortcutLabels(
+	workspaces: Array<{ id: string }>,
+): Map<string, string> {
+	const previousRef = useRef<{
+		workspaceIds: string[];
+		labels: Map<string, string>;
+	} | null>(null);
+
+	return useMemo(() => {
+		const workspaceIds = workspaces
+			.slice(0, MAX_SHORTCUT_COUNT)
+			.map((workspace) => workspace.id);
+		const previous = previousRef.current;
+		if (previous && haveSameIds(previous.workspaceIds, workspaceIds)) {
+			return previous.labels;
+		}
+
+		const labels = new Map(
+			workspaceIds.map((workspaceId, index) => [workspaceId, `⌘${index + 1}`]),
+		);
+		previousRef.current = { workspaceIds, labels };
+		return labels;
+	}, [workspaces]);
+}
+
 export function useDashboardSidebarShortcuts(
 	groups: DashboardSidebarProject[],
 ) {
@@ -28,14 +60,47 @@ export function useDashboardSidebarShortcuts(
 				.filter((workspace) => !workspace.creationStatus),
 		[groups],
 	);
-	const workspaceShortcutLabels = useMemo(
-		() =>
-			new Map(
-				flattenedWorkspaces
-					.slice(0, MAX_SHORTCUT_COUNT)
-					.map((workspace, index) => [workspace.id, `⌘${index + 1}`]),
-			),
-		[flattenedWorkspaces],
+	const workspaceShortcutLabels =
+		useStableWorkspaceShortcutLabels(flattenedWorkspaces);
+
+	const workspaceLocations = useMemo(() => {
+		const map = new Map<string, WorkspaceLocation>();
+		for (const project of groups) {
+			for (const child of project.children) {
+				if (child.type === "workspace") {
+					map.set(child.workspace.id, {
+						projectId: project.id,
+						projectIsCollapsed: project.isCollapsed,
+						sectionId: null,
+						sectionIsCollapsed: false,
+					});
+					continue;
+				}
+				for (const workspace of child.section.workspaces) {
+					map.set(workspace.id, {
+						projectId: project.id,
+						projectIsCollapsed: project.isCollapsed,
+						sectionId: child.section.id,
+						sectionIsCollapsed: child.section.isCollapsed,
+					});
+				}
+			}
+		}
+		return map;
+	}, [groups]);
+
+	const revealWorkspace = useCallback(
+		(workspaceId: string) => {
+			const location = workspaceLocations.get(workspaceId);
+			if (!location) return;
+			if (location.projectIsCollapsed) {
+				toggleProjectCollapsed(location.projectId);
+			}
+			if (location.sectionId && location.sectionIsCollapsed) {
+				toggleSectionCollapsed(location.sectionId);
+			}
+		},
+		[workspaceLocations, toggleProjectCollapsed, toggleSectionCollapsed],
 	);
 
 	const workspaceLocations = useMemo(() => {

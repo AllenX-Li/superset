@@ -9,6 +9,7 @@ import { toast } from "@superset/ui/sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { MarkdownEditor } from "renderer/components/MarkdownEditor";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { Route as TasksLayoutRoute } from "../layout";
@@ -16,7 +17,6 @@ import { ActivitySection } from "./components/ActivitySection";
 import { EditableTitle } from "./components/EditableTitle";
 import { PropertiesSidebar } from "./components/PropertiesSidebar";
 import { TaskDetailHeader } from "./components/TaskDetailHeader";
-import { TaskMarkdownRenderer } from "./components/TaskMarkdownRenderer";
 import { useEscapeToNavigate } from "./hooks/useEscapeToNavigate";
 
 export const Route = createFileRoute(
@@ -37,7 +37,6 @@ function TaskDetailPage() {
 	const navigate = useNavigate();
 	const { activeHostUrl } = useLocalHostService();
 	const queryClient = useQueryClient();
-
 	const isUuidTaskId =
 		/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
 			taskId,
@@ -172,7 +171,7 @@ function TaskDetailPage() {
 					<div className="px-6 py-6 max-w-4xl">
 						<EditableTitle value={task.title} onSave={handleSaveTitle} />
 
-						<TaskMarkdownRenderer
+						<MarkdownEditor
 							content={task.description ?? ""}
 							onSave={handleSaveDescription}
 						/>

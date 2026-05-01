@@ -5,10 +5,12 @@ import {
 	useNavigate,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import {
 	type SettingsSection,
 	useSetSettingsSearchQuery,
+	useSettingsOriginRoute,
 	useSettingsSearchQuery,
 } from "renderer/stores/settings-state";
 import { SearchResultsBanner } from "./components/SearchResultsBanner";
@@ -30,12 +32,15 @@ const SECTION_ORDER: SettingsSection[] = [
 	"behavior",
 	"git",
 	"terminal",
+	"links",
 	"models",
 	"organization",
 	"integrations",
 	"billing",
 	"apikeys",
 	"permissions",
+	"hosts",
+	"experimental",
 ];
 
 function getSectionFromPath(pathname: string): SettingsSection | null {
@@ -47,9 +52,12 @@ function getSectionFromPath(pathname: string): SettingsSection | null {
 	if (pathname.includes("/settings/behavior")) return "behavior";
 	if (pathname.includes("/settings/git")) return "git";
 	if (pathname.includes("/settings/terminal")) return "terminal";
+	if (pathname.includes("/settings/links")) return "links";
 	if (pathname.includes("/settings/models")) return "models";
+	if (pathname.includes("/settings/experimental")) return "experimental";
 	if (pathname.includes("/settings/integrations")) return "integrations";
 	if (pathname.includes("/settings/permissions")) return "permissions";
+	if (pathname.includes("/settings/hosts")) return "hosts";
 	if (pathname.includes("/settings/project")) return "project";
 	return null;
 }
@@ -72,12 +80,18 @@ function getPathFromSection(section: SettingsSection): string {
 			return "/settings/git";
 		case "terminal":
 			return "/settings/terminal";
+		case "links":
+			return "/settings/links";
 		case "models":
 			return "/settings/models";
+		case "experimental":
+			return "/settings/experimental";
 		case "integrations":
 			return "/settings/integrations";
 		case "permissions":
 			return "/settings/permissions";
+		case "hosts":
+			return "/settings/hosts";
 		default:
 			return "/settings/account";
 	}
@@ -88,6 +102,7 @@ function SettingsLayout() {
 	const isMac = platform === undefined || platform === "darwin";
 	const searchQuery = useSettingsSearchQuery();
 	const setSearchQuery = useSetSettingsSearchQuery();
+	const originRoute = useSettingsOriginRoute();
 	const location = useLocation();
 	const navigate = useNavigate();
 	const normalizedSearchQuery = searchQuery.trim();
@@ -103,6 +118,7 @@ function SettingsLayout() {
 		if (!currentSection) return;
 
 		if (currentSection === "project") return;
+		if (currentSection === "hosts") return;
 
 		const matchCounts = getMatchCountBySection(normalizedSearchQuery);
 		const currentHasMatches = (matchCounts[currentSection] ?? 0) > 0;
@@ -116,6 +132,17 @@ function SettingsLayout() {
 			}
 		}
 	}, [isSearchActive, location.pathname, navigate, normalizedSearchQuery]);
+
+	useHotkeys(
+		"escape",
+		(event) => {
+			if (document.querySelector('[data-state="open"]')) return;
+			event.preventDefault();
+			navigate({ to: originRoute });
+		},
+		{ enableOnFormTags: false, enableOnContentEditable: false },
+		[navigate, originRoute],
+	);
 
 	return (
 		<div className="flex flex-col h-screen w-screen bg-tertiary">

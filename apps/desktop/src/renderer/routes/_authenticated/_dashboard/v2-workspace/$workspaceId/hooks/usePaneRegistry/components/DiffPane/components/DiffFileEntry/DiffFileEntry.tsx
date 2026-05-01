@@ -1,3 +1,4 @@
+import { Button } from "@superset/ui/button";
 import { toast } from "@superset/ui/sonner";
 import { memo, useCallback, useRef, useState } from "react";
 import type { ChangesetFile } from "../../../../../useChangeset";
@@ -33,9 +34,12 @@ interface DiffFileEntryProps {
 	diffStyle: "split" | "unified";
 	collapsed: boolean;
 	onSetCollapsed: (path: string, value: boolean) => void;
+	expanded: boolean;
+	onSetExpanded: (path: string, value: boolean) => void;
 	viewed: boolean;
 	onSetViewed: (path: string, next: boolean) => void;
-	onOpenFile: (path: string) => void;
+	onOpenFile: (path: string, openInNewTab?: boolean) => void;
+	onOpenInExternalEditor: (path: string) => void;
 }
 
 export const DiffFileEntry = memo(function DiffFileEntry({
@@ -44,18 +48,21 @@ export const DiffFileEntry = memo(function DiffFileEntry({
 	diffStyle,
 	collapsed,
 	onSetCollapsed,
+	expanded,
+	onSetExpanded,
 	viewed,
 	onSetViewed,
 	onOpenFile,
+	onOpenInExternalEditor,
 }: DiffFileEntryProps) {
 	const wrapperRef = useRef<HTMLDivElement>(null);
 	const isNear = useInView(wrapperRef, { rootMargin: "2000px 0px" });
 	const hasBeenNearRef = useRef(false);
 	if (isNear) hasBeenNearRef.current = true;
 
-	const [showFullDiff, setShowFullDiff] = useState(false);
 	const [expandUnchanged, setExpandUnchanged] = useState(false);
 	const reason = deferReason(file);
+	const showFullDiff = expanded;
 
 	const handleToggleCollapsed = useCallback(
 		() => onSetCollapsed(file.path, !collapsed),
@@ -66,16 +73,32 @@ export const DiffFileEntry = memo(function DiffFileEntry({
 		onSetViewed(file.path, next);
 		onSetCollapsed(file.path, next);
 	}, [viewed, file.path, onSetViewed, onSetCollapsed]);
-	const handleOpenFile = useCallback(() => {
+	const showDeletedFileToast = useCallback(() => {
+		toast.error("File no longer exists", {
+			description: `${file.path} was deleted in this change.`,
+		});
+	}, [file.path]);
+	const handleOpenFile = useCallback(
+		(openInNewTab?: boolean) => {
+			if (file.status === "deleted") {
+				showDeletedFileToast();
+				return;
+			}
+			onOpenFile(file.path, openInNewTab);
+		},
+		[file.status, file.path, onOpenFile, showDeletedFileToast],
+	);
+	const handleOpenInExternalEditor = useCallback(() => {
 		if (file.status === "deleted") {
-			toast.error("File no longer exists", {
-				description: `${file.path} was deleted in this change.`,
-			});
+			showDeletedFileToast();
 			return;
 		}
-		onOpenFile(file.path);
-	}, [file.status, file.path, onOpenFile]);
-	const handleShowFullDiff = useCallback(() => setShowFullDiff(true), []);
+		onOpenInExternalEditor(file.path);
+	}, [file.status, file.path, onOpenInExternalEditor, showDeletedFileToast]);
+	const handleShowFullDiff = useCallback(
+		() => onSetExpanded(file.path, true),
+		[onSetExpanded, file.path],
+	);
 	const handleToggleExpandUnchanged = useCallback(
 		() => setExpandUnchanged((prev) => !prev),
 		[],
@@ -103,6 +126,7 @@ export const DiffFileEntry = memo(function DiffFileEntry({
 					viewed={viewed}
 					onToggleViewed={handleToggleViewed}
 					onOpenFile={handleOpenFile}
+					onOpenInExternalEditor={handleOpenInExternalEditor}
 				/>
 			</div>
 		);
@@ -134,6 +158,7 @@ export const DiffFileEntry = memo(function DiffFileEntry({
 					viewed={viewed}
 					onToggleViewed={handleToggleViewed}
 					onOpenFile={handleOpenFile}
+					onOpenInExternalEditor={handleOpenInExternalEditor}
 				/>
 			) : null}
 		</div>
@@ -148,7 +173,8 @@ interface DeferredDiffPlaceholderProps {
 	onToggleCollapsed: () => void;
 	viewed: boolean;
 	onToggleViewed: () => void;
-	onOpenFile?: () => void;
+	onOpenFile?: (openInNewTab?: boolean) => void;
+	onOpenInExternalEditor?: () => void;
 }
 
 function DeferredDiffPlaceholder({
@@ -160,6 +186,7 @@ function DeferredDiffPlaceholder({
 	viewed,
 	onToggleViewed,
 	onOpenFile,
+	onOpenInExternalEditor,
 }: DeferredDiffPlaceholderProps) {
 	const isDeleted = reason === "deleted";
 	const fullHeight = isDeleted
@@ -173,7 +200,7 @@ function DeferredDiffPlaceholder({
 		: `${(file.additions + file.deletions).toLocaleString()} changed lines`;
 
 	return (
-		<div className="flex flex-col overflow-hidden rounded-md border border-border">
+		<div className="flex flex-col overflow-hidden">
 			<DiffFileHeader
 				path={file.path}
 				status={file.status}
@@ -185,6 +212,7 @@ function DeferredDiffPlaceholder({
 				viewed={viewed}
 				onToggleViewed={onToggleViewed}
 				onOpenFile={onOpenFile}
+				onOpenInExternalEditor={onOpenInExternalEditor}
 			/>
 			{!collapsed && (
 				<div
@@ -195,13 +223,15 @@ function DeferredDiffPlaceholder({
 					{subtitle && (
 						<div className="text-xs text-muted-foreground">{subtitle}</div>
 					)}
-					<button
+					<Button
 						type="button"
+						size="xs"
+						variant="outline"
 						onClick={onShow}
-						className="mt-1 rounded border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+						className="mt-1"
 					>
 						Show diff
-					</button>
+					</Button>
 				</div>
 			)}
 		</div>

@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Octokit } from "@octokit/rest";
+import { parseGitHubRemote } from "@superset/shared/github-remote";
 import { and, eq, inArray } from "drizzle-orm";
 import type { HostDb } from "../../db";
 import { projects, pullRequests, workspaces } from "../../db/schema";
 import type { GitFactory } from "../git";
 import { fetchRepositoryPullRequests } from "./utils/github-query";
-import { parseGitHubRemote } from "./utils/parse-github-remote";
+import type { GraphQLPullRequestNode } from "./utils/github-query/types";
 import {
 	type ChecksStatus,
 	coerceChecksStatus,
@@ -22,7 +23,11 @@ import {
 } from "./utils/pull-request-mappers";
 
 const BRANCH_SYNC_INTERVAL_MS = 30_000;
-const PROJECT_REFRESH_INTERVAL_MS = 10_000;
+const PROJECT_REFRESH_INTERVAL_MS = 20_000;
+// Multiple projects can target the same GitHub repo; collapse those into a
+// single GraphQL call within the polling window so we don't multiply traffic
+// by the number of projects.
+const REPO_PULL_REQUEST_CACHE_TTL_MS = 10_000;
 const UNBORN_HEAD_ERROR_PATTERNS = [
 	"ambiguous argument 'head'",
 	"unknown revision or path not in the working tree",
@@ -67,6 +72,96 @@ async function getHeadSha(git: Awaited<ReturnType<GitFactory>>) {
 	}
 }
 
+// `pushRemote` / `branch.remote` accept a remote name or a URL.
+async function resolveRemoteValueToUrl(
+	git: Awaited<ReturnType<GitFactory>>,
+	value: string,
+): Promise<string | null> {
+	if (/^(https?:|git@|ssh:)/.test(value)) return value;
+	try {
+		const url = await git.remote(["get-url", value]);
+		return typeof url === "string" ? url.trim() || null : null;
+	} catch {
+		return null;
+	}
+}
+
+async function resolveWorkspaceUpstream(
+	git: Awaited<ReturnType<GitFactory>>,
+	localBranch: string,
+): Promise<{ owner: string; name: string; branch: string } | null> {
+	// `@{push}` resolves remote+branch respecting all config precedence in one call.
+	const pushRef = await tryRaw(git, [
+		"rev-parse",
+		"--abbrev-ref",
+		`${localBranch}@{push}`,
+	]);
+	if (pushRef) {
+		const slash = pushRef.indexOf("/");
+		if (slash > 0) {
+			const url = await resolveRemoteValueToUrl(git, pushRef.slice(0, slash));
+			const parsed = url ? parseGitHubRemote(url) : null;
+			if (parsed) {
+				return {
+					owner: parsed.owner,
+					name: parsed.name,
+					branch: pushRef.slice(slash + 1),
+				};
+			}
+		}
+	}
+
+	// Fallback when `@{push}` isn't configured — mirrors gh's config chain.
+	// Require `branch.<n>.merge`; without it, `remote.pushDefault` alone would
+	// re-open the same-name collision hole on untracked branches.
+	const mergeRef = await tryConfig(git, `branch.${localBranch}.merge`);
+	const trackedBranch = mergeRef?.replace(/^refs\/heads\//, "");
+	if (!trackedBranch) return null;
+
+	const remoteValue =
+		(await tryConfig(git, `branch.${localBranch}.pushRemote`)) ??
+		(await tryConfig(git, "remote.pushDefault")) ??
+		(await tryConfig(git, `branch.${localBranch}.remote`));
+	if (!remoteValue) return null;
+
+	const url = await resolveRemoteValueToUrl(git, remoteValue);
+	const parsed = url ? parseGitHubRemote(url) : null;
+	if (!parsed) return null;
+
+	// `gh pr checkout` renames the local branch on collision (`main` →
+	// `quueli-main`) but the PR's headRefName stays `main`, so we key on the
+	// tracked remote branch, not the local name.
+	return { owner: parsed.owner, name: parsed.name, branch: trackedBranch };
+}
+
+async function tryRaw(
+	git: Awaited<ReturnType<GitFactory>>,
+	args: string[],
+): Promise<string | null> {
+	try {
+		return (await git.raw(args)).trim() || null;
+	} catch {
+		return null;
+	}
+}
+
+async function tryConfig(
+	git: Awaited<ReturnType<GitFactory>>,
+	key: string,
+): Promise<string | null> {
+	return tryRaw(git, ["config", "--get", key]);
+}
+
+function upstreamKey(
+	owner: string | null,
+	repo: string | null,
+	branch: string,
+): string | null {
+	if (!owner || !repo) return null;
+	// GitHub owner/repo are case-insensitive; branch names are case-sensitive.
+	return `${owner.toLowerCase()}/${repo.toLowerCase()}#${branch}`;
+}
+
 type RepoProvider = "github";
 
 export interface PullRequestStateSnapshot {
@@ -107,7 +202,10 @@ export class PullRequestRuntimeManager {
 	private branchSyncTimer: ReturnType<typeof setInterval> | null = null;
 	private projectRefreshTimer: ReturnType<typeof setInterval> | null = null;
 	private readonly inFlightProjects = new Map<string, Promise<void>>();
-	private readonly nextProjectRefreshAt = new Map<string, number>();
+	private readonly repoPullRequestCache = new Map<
+		string,
+		{ promise: Promise<GraphQLPullRequestNode[]>; fetchedAt: number }
+	>();
 
 	constructor(options: PullRequestRuntimeManagerOptions) {
 		this.db = options.db;
@@ -126,7 +224,7 @@ export class PullRequestRuntimeManager {
 		}, PROJECT_REFRESH_INTERVAL_MS);
 
 		void this.syncWorkspaceBranches();
-		void this.refreshEligibleProjects(true);
+		void this.refreshEligibleProjects();
 	}
 
 	stop() {
@@ -197,7 +295,9 @@ export class PullRequestRuntimeManager {
 
 		const projectIds = [...new Set(rows.map((row) => row.projectId))];
 		await Promise.all(
-			projectIds.map((projectId) => this.refreshProject(projectId, true)),
+			projectIds.map((projectId) =>
+				this.refreshProject(projectId, { bypassCache: true }),
+			),
 		);
 	}
 
@@ -213,8 +313,18 @@ export class PullRequestRuntimeManager {
 					continue;
 				}
 				const headSha = await getHeadSha(git);
+				const upstream = await resolveWorkspaceUpstream(git, branch);
+				const upstreamOwner = upstream?.owner ?? null;
+				const upstreamRepo = upstream?.name ?? null;
+				const upstreamBranch = upstream?.branch ?? null;
 
-				if (branch === workspace.branch && headSha === workspace.headSha) {
+				if (
+					branch === workspace.branch &&
+					headSha === workspace.headSha &&
+					upstreamOwner === workspace.upstreamOwner &&
+					upstreamRepo === workspace.upstreamRepo &&
+					upstreamBranch === workspace.upstreamBranch
+				) {
 					continue;
 				}
 
@@ -223,6 +333,9 @@ export class PullRequestRuntimeManager {
 					.set({
 						branch,
 						headSha,
+						upstreamOwner,
+						upstreamRepo,
+						upstreamBranch,
 					})
 					.where(eq(workspaces.id, workspace.id))
 					.run();
@@ -242,12 +355,12 @@ export class PullRequestRuntimeManager {
 
 		await Promise.all(
 			[...changedProjectIds].map((projectId) =>
-				this.refreshProject(projectId, true),
+				this.refreshProject(projectId, { bypassCache: true }),
 			),
 		);
 	}
 
-	private async refreshEligibleProjects(force = false): Promise<void> {
+	private async refreshEligibleProjects(): Promise<void> {
 		const rows = this.db
 			.select({
 				projectId: workspaces.projectId,
@@ -256,27 +369,21 @@ export class PullRequestRuntimeManager {
 			.all();
 		const projectIds = [...new Set(rows.map((row) => row.projectId))];
 		await Promise.all(
-			projectIds.map((projectId) => this.refreshProject(projectId, force)),
+			projectIds.map((projectId) => this.refreshProject(projectId)),
 		);
 	}
 
 	private async refreshProject(
 		projectId: string,
-		force = false,
+		options: { bypassCache?: boolean } = {},
 	): Promise<void> {
-		const now = Date.now();
 		const existing = this.inFlightProjects.get(projectId);
 		if (existing) {
 			await existing;
 			return;
 		}
 
-		const nextEligibleRefreshAt = this.nextProjectRefreshAt.get(projectId) ?? 0;
-		if (!force && nextEligibleRefreshAt > now) {
-			return;
-		}
-
-		const refreshPromise = this.performProjectRefresh(projectId)
+		const refreshPromise = this.performProjectRefresh(projectId, options)
 			.catch((error) => {
 				console.warn(
 					"[host-service:pull-request-runtime] Project refresh failed",
@@ -288,17 +395,16 @@ export class PullRequestRuntimeManager {
 			})
 			.finally(() => {
 				this.inFlightProjects.delete(projectId);
-				this.nextProjectRefreshAt.set(
-					projectId,
-					Date.now() + PROJECT_REFRESH_INTERVAL_MS,
-				);
 			});
 
 		this.inFlightProjects.set(projectId, refreshPromise);
 		await refreshPromise;
 	}
 
-	private async performProjectRefresh(projectId: string): Promise<void> {
+	private async performProjectRefresh(
+		projectId: string,
+		options: { bypassCache?: boolean } = {},
+	): Promise<void> {
 		const repo = await this.getProjectRepository(projectId);
 		if (!repo) return;
 
@@ -309,22 +415,33 @@ export class PullRequestRuntimeManager {
 			.all();
 		if (projectWorkspaces.length === 0) return;
 
-		const branchNames = [
-			...new Set(projectWorkspaces.map((workspace) => workspace.branch)),
-		];
-		const branchToPullRequest = await this.fetchRepoPullRequests(
+		const wantedKeys = new Set<string>();
+		for (const workspace of projectWorkspaces) {
+			const key = upstreamKey(
+				workspace.upstreamOwner,
+				workspace.upstreamRepo,
+				workspace.upstreamBranch ?? workspace.branch,
+			);
+			if (key) wantedKeys.add(key);
+		}
+
+		const keyToPullRequest = await this.fetchRepoPullRequests(
 			projectId,
 			repo,
-			branchNames,
+			wantedKeys,
+			options,
 		);
 
 		for (const workspace of projectWorkspaces) {
-			const match = branchToPullRequest.get(workspace.branch) ?? null;
+			const key = upstreamKey(
+				workspace.upstreamOwner,
+				workspace.upstreamRepo,
+				workspace.upstreamBranch ?? workspace.branch,
+			);
+			const match = key ? keyToPullRequest.get(key) : undefined;
 			this.db
 				.update(workspaces)
-				.set({
-					pullRequestId: match?.id ?? null,
-				})
+				.set({ pullRequestId: match?.id ?? null })
 				.where(eq(workspaces.id, workspace.id))
 				.run();
 		}
@@ -388,36 +505,73 @@ export class PullRequestRuntimeManager {
 		};
 	}
 
+	private async getCachedRepoPullRequests(
+		repo: NormalizedRepoIdentity,
+		options: { bypassCache?: boolean } = {},
+	): Promise<GraphQLPullRequestNode[]> {
+		const cacheKey = `${repo.owner.toLowerCase()}/${repo.name.toLowerCase()}`;
+		if (!options.bypassCache) {
+			const cached = this.repoPullRequestCache.get(cacheKey);
+			if (
+				cached &&
+				Date.now() - cached.fetchedAt < REPO_PULL_REQUEST_CACHE_TTL_MS
+			) {
+				return cached.promise;
+			}
+		}
+
+		const fetchedAt = Date.now();
+		const promise = (async () => {
+			const octokit = await this.github();
+			return fetchRepositoryPullRequests(octokit, {
+				owner: repo.owner,
+				name: repo.name,
+			});
+		})();
+		// Evict on failure so the next caller retries instead of serving a
+		// poisoned cache entry for the rest of the TTL.
+		promise.catch(() => {
+			if (this.repoPullRequestCache.get(cacheKey)?.promise === promise) {
+				this.repoPullRequestCache.delete(cacheKey);
+			}
+		});
+		this.repoPullRequestCache.set(cacheKey, { promise, fetchedAt });
+		return promise;
+	}
+
 	private async fetchRepoPullRequests(
 		projectId: string,
 		repo: NormalizedRepoIdentity,
-		branches: string[],
+		wantedKeys: Set<string>,
+		options: { bypassCache?: boolean } = {},
 	): Promise<Map<string, { id: string }>> {
-		const octokit = await this.github();
-		const nodes = await fetchRepositoryPullRequests(octokit, {
-			owner: repo.owner,
-			name: repo.name,
-		});
+		if (wantedKeys.size === 0) return new Map();
 
-		const wantedBranches = new Set(branches);
-		const latestByBranch = new Map<string, (typeof nodes)[number]>();
+		const nodes = await this.getCachedRepoPullRequests(repo, options);
+
+		const latestByKey = new Map<string, (typeof nodes)[number]>();
 
 		for (const node of nodes) {
-			if (!wantedBranches.has(node.headRefName)) continue;
-			const existing = latestByBranch.get(node.headRefName);
+			const key = upstreamKey(
+				node.headRepositoryOwner?.login ?? null,
+				node.headRepository?.name ?? null,
+				node.headRefName,
+			);
+			if (!key || !wantedKeys.has(key)) continue;
+			const existing = latestByKey.get(key);
 			if (
 				!existing ||
 				new Date(node.updatedAt).getTime() >
 					new Date(existing.updatedAt).getTime()
 			) {
-				latestByBranch.set(node.headRefName, node);
+				latestByKey.set(key, node);
 			}
 		}
 
-		const branchToRow = new Map<string, { id: string }>();
+		const keyToRow = new Map<string, { id: string }>();
 		const now = Date.now();
 
-		for (const [branch, node] of latestByBranch) {
+		for (const [key, node] of latestByKey) {
 			const existing = this.db.query.pullRequests
 				.findFirst({
 					where: and(
@@ -470,9 +624,9 @@ export class PullRequestRuntimeManager {
 					.run();
 			}
 
-			branchToRow.set(branch, { id: rowId });
+			keyToRow.set(key, { id: rowId });
 		}
 
-		return branchToRow;
+		return keyToRow;
 	}
 }
