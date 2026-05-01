@@ -10,8 +10,6 @@ jobs:
   sync-upstream:
     name: Sync Upstream Analysis
     runs-on: ubuntu-latest
-    # Only run on the fork, never on the upstream repo
-    if: github.repository == 'AllenX-Li/superset'
     permissions:
       contents: write
       pull-requests: write
