@@ -6,6 +6,8 @@ on:
     paths-ignore:
       - "apps/desktop/**"
 
+if: github.repository == 'superset-sh/superset'
+
 concurrency:
   group: preview-${{ github.event.pull_request.number }}
   cancel-in-progress: true

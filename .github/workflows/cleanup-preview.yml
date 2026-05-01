@@ -4,6 +4,8 @@ on:
   pull_request:
     types: [closed]
 
+if: github.repository == 'superset-sh/superset'
+
 jobs:
   cleanup:
     name: Cleanup Preview Resources
