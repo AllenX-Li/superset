@@ -7,10 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Force full re-analysis from last 30 upstream commits, ignoring last-sync file"
+        description: "Set to 'true' to force full re-analysis from last 30 upstream commits"
         required: false
-        default: false
-        type: boolean
+        default: "false"
 
 jobs:
   sync-upstream:
