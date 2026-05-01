@@ -14,24 +14,18 @@ import { useEffect, useState } from "react";
 interface EditSecretDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	projectId: string;
-	organizationId: string;
 	secret: {
 		id: string;
 		key: string;
 		value: string;
 		sensitive: boolean;
 	};
-	onSaved: () => void;
 }
 
 export function EditSecretDialog({
 	open,
 	onOpenChange,
-	_projectId,
-	_organizationId,
 	secret,
-	_onSaved,
 }: EditSecretDialogProps) {
 	const [value, setValue] = useState("");
 	const [isSaving, setIsSaving] = useState(false);

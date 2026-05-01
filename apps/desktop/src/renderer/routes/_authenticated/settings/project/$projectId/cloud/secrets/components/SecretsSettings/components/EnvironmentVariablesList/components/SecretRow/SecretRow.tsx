@@ -29,17 +29,11 @@ interface SecretRowProps {
 		updatedAt: Date;
 		createdBy: { id: string; name: string; image: string | null } | null;
 	};
-	organizationId: string;
 	onEdit: () => void;
 	onDeleted: () => void;
 }
 
-export function SecretRow({
-	secret,
-	_organizationId,
-	onEdit,
-	onDeleted,
-}: SecretRowProps) {
+export function SecretRow({ secret, onEdit, onDeleted }: SecretRowProps) {
 	const [isRevealed, setIsRevealed] = useState(false);
 	const [isDeleting, setIsDeleting] = useState(false);
 

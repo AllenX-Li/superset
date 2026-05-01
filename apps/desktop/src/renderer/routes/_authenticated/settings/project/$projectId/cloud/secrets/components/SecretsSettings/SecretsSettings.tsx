@@ -75,15 +75,11 @@ export function SecretsSettings({ projectId }: SecretsSettingsProps) {
 	const [editingSecret, setEditingSecret] = useState<EditingSecret | null>(
 		null,
 	);
-	const [refreshKey, setRefreshKey] = useState(0);
+	const [refreshKey, _setRefreshKey] = useState(0);
 
 	const handleCreateCloudProject = useCallback(async () => {
 		return;
 	}, []);
-
-	const handleSaved = () => {
-		setRefreshKey((k) => k + 1);
-	};
 
 	if (!project) {
 		return null;
@@ -99,8 +95,6 @@ export function SecretsSettings({ projectId }: SecretsSettingsProps) {
 				{isConnected && organizationId && project.neonProjectId ? (
 					<EnvironmentVariablesList
 						key={refreshKey}
-						cloudProjectId={project.neonProjectId}
-						organizationId={organizationId}
 						onAdd={() => setIsAddSheetOpen(true)}
 						onEdit={setEditingSecret}
 					/>
@@ -135,9 +129,6 @@ export function SecretsSettings({ projectId }: SecretsSettingsProps) {
 				<AddSecretSheet
 					open={isAddSheetOpen}
 					onOpenChange={setIsAddSheetOpen}
-					projectId={project.neonProjectId ?? ""}
-					organizationId={organizationId}
-					onSaved={handleSaved}
 				/>
 			)}
 
@@ -147,10 +138,7 @@ export function SecretsSettings({ projectId }: SecretsSettingsProps) {
 					onOpenChange={(open) => {
 						if (!open) setEditingSecret(null);
 					}}
-					projectId={project.neonProjectId ?? ""}
-					organizationId={organizationId}
 					secret={editingSecret}
-					onSaved={handleSaved}
 				/>
 			)}
 		</div>

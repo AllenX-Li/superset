@@ -36,9 +36,6 @@ function nextEntryId() {
 interface AddSecretSheetProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	projectId: string;
-	organizationId: string;
-	onSaved: () => void;
 }
 
 function createEmptyEntry(): SecretEntry {
@@ -55,13 +52,7 @@ function toSecretEntries(
 	}));
 }
 
-export function AddSecretSheet({
-	open,
-	onOpenChange,
-	_projectId,
-	_organizationId,
-	_onSaved,
-}: AddSecretSheetProps) {
+export function AddSecretSheet({ open, onOpenChange }: AddSecretSheetProps) {
 	const [entries, setEntries] = useState<SecretEntry[]>([createEmptyEntry()]);
 	const [sensitive, setSensitive] = useState(true);
 	const [isSaving, setIsSaving] = useState(false);

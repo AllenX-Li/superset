@@ -51,15 +51,11 @@ function sortSecrets(secrets: Secret[], order: SortOrder): Secret[] {
 }
 
 interface EnvironmentVariablesListProps {
-	cloudProjectId: string;
-	organizationId: string;
 	onAdd: () => void;
 	onEdit: (secret: Secret) => void;
 }
 
 export function EnvironmentVariablesList({
-	_cloudProjectId,
-	_organizationId,
 	onAdd,
 	onEdit,
 }: EnvironmentVariablesListProps) {
@@ -146,7 +142,6 @@ export function EnvironmentVariablesList({
 						<SecretRow
 							key={secret.id}
 							secret={secret}
-							organizationId={organizationId}
 							onEdit={() => onEdit(secret)}
 							onDeleted={fetchSecrets}
 						/>
