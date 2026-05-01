@@ -5,11 +5,6 @@ on:
     # Run every Monday at 9:00 AM UTC
     - cron: "0 9 * * 1"
   workflow_dispatch:
-    inputs:
-      force:
-        description: "Set to 'true' to force full re-analysis from last 30 upstream commits"
-        required: false
-        default: "false"
 
 jobs:
   sync-upstream:
@@ -40,5 +35,5 @@ jobs:
       - name: Run sync analysis
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FORCE_FULL_ANALYSIS: ${{ github.event.inputs.force || 'false' }}
+          FORCE_FULL_ANALYSIS: "false"
         run: bash .github/scripts/sync-upstream.sh
