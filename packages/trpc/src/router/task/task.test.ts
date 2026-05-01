@@ -22,9 +22,12 @@ function createDb() {
 		limit: selectLimitMock,
 		orderBy: selectOrderByMock,
 	}));
-	const selectFromMock = mock(() => ({
-		where: selectWhereMock,
-	}));
+	const selectFromMock = mock(() => {
+		const chainable: Record<string, unknown> = {};
+		chainable.leftJoin = mock(() => chainable);
+		chainable.where = selectWhereMock;
+		return chainable;
+	});
 	const selectMock = mock(() => ({
 		from: selectFromMock,
 	}));
@@ -261,9 +264,11 @@ describe("task router authorization", () => {
 	it("rejects cross-tenant task.byId access after resolving task ownership", async () => {
 		dbSelectResults.push([
 			{
-				id: TASK_ID,
-				organizationId: ORGANIZATION_ID,
-				title: "Cross-tenant task",
+				task: {
+					id: TASK_ID,
+					organizationId: ORGANIZATION_ID,
+					title: "Cross-tenant task",
+				},
 			},
 		]);
 		verifyOrgMembershipMock.mockImplementationOnce(async () => {
@@ -284,10 +289,12 @@ describe("task router authorization", () => {
 	it("scopes task.bySlug to the active organization", async () => {
 		dbSelectResults.push([
 			{
-				id: TASK_ID,
-				organizationId: ORGANIZATION_ID,
-				slug: "demo-task",
-				title: "Scoped task",
+				task: {
+					id: TASK_ID,
+					organizationId: ORGANIZATION_ID,
+					slug: "demo-task",
+					title: "Scoped task",
+				},
 			},
 		]);
 		const caller = createCaller(createContext());
@@ -299,9 +306,11 @@ describe("task router authorization", () => {
 			ORGANIZATION_ID,
 		);
 		expect(result).toMatchObject({
-			id: TASK_ID,
-			slug: "demo-task",
-			title: "Scoped task",
+			task: {
+				id: TASK_ID,
+				slug: "demo-task",
+				title: "Scoped task",
+			},
 		});
 	});
 

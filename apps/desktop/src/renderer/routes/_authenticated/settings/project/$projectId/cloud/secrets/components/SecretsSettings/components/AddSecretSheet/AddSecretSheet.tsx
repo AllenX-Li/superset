@@ -58,9 +58,9 @@ function toSecretEntries(
 export function AddSecretSheet({
 	open,
 	onOpenChange,
-	projectId,
-	organizationId,
-	onSaved,
+	_projectId,
+	_organizationId,
+	_onSaved,
 }: AddSecretSheetProps) {
 	const [entries, setEntries] = useState<SecretEntry[]>([createEmptyEntry()]);
 	const [sensitive, setSensitive] = useState(true);

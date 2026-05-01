@@ -28,10 +28,10 @@ interface EditSecretDialogProps {
 export function EditSecretDialog({
 	open,
 	onOpenChange,
-	projectId,
-	organizationId,
+	_projectId,
+	_organizationId,
 	secret,
-	onSaved,
+	_onSaved,
 }: EditSecretDialogProps) {
 	const [value, setValue] = useState("");
 	const [isSaving, setIsSaving] = useState(false);

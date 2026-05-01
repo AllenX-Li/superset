@@ -58,8 +58,8 @@ interface EnvironmentVariablesListProps {
 }
 
 export function EnvironmentVariablesList({
-	cloudProjectId,
-	organizationId,
+	_cloudProjectId,
+	_organizationId,
 	onAdd,
 	onEdit,
 }: EnvironmentVariablesListProps) {

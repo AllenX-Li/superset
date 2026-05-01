@@ -31,7 +31,10 @@ export function AccountSettings({ visibleItems }: AccountSettingsProps) {
 	);
 
 	// Local session context (auth-client removed)
-	const session: any = {
+	const session: {
+		session: { activeOrganizationId: string };
+		user: { id: string; email: string; name: string };
+	} = {
 		session: { activeOrganizationId: "local" },
 		user: { id: "local-user", email: "", name: "" },
 	};

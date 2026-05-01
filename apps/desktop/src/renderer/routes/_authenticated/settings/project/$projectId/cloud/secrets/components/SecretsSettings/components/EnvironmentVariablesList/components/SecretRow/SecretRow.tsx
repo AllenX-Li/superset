@@ -36,7 +36,7 @@ interface SecretRowProps {
 
 export function SecretRow({
 	secret,
-	organizationId,
+	_organizationId,
 	onEdit,
 	onDeleted,
 }: SecretRowProps) {
