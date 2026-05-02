@@ -16,8 +16,12 @@ import {
 } from "react";
 import { useDrop } from "react-dnd";
 import type { Tab } from "../../../../../types";
+import { PANE_DRAG_TYPE } from "../Tab/components/Pane/components/PaneHeader";
 import { TAB_DRAG_TYPE, TabItem } from "./components/TabItem";
 import { computeInsertIndex, TAB_WIDTH } from "./utils";
+
+type TabDragItem = { tabId: string };
+type PaneDragItem = { paneId: string };
 
 interface TabBarProps<TData> {
 	tabs: Tab<TData>[];
@@ -28,6 +32,7 @@ interface TabBarProps<TData> {
 	onCloseAllTabs: () => void;
 	onRenameTab: (tabId: string, title: string | undefined) => void;
 	onReorderTab: (tabId: string, toIndex: number) => void;
+	onMovePaneToNewTab: (paneId: string, toIndex: number) => void;
 	getTabTitle: (tab: Tab<TData>) => string;
 	renderTabIcon?: (tab: Tab<TData>) => ReactNode;
 	renderAddTabMenu?: () => ReactNode;
@@ -73,6 +78,7 @@ export function TabBar<TData>({
 	onCloseAllTabs,
 	onRenameTab,
 	onReorderTab,
+	onMovePaneToNewTab,
 	getTabTitle,
 	renderTabIcon,
 	renderAddTabMenu,
@@ -87,8 +93,8 @@ export function TabBar<TData>({
 
 	const [{ isOver }, connectDrop] = useDrop(
 		() => ({
-			accept: TAB_DRAG_TYPE,
-			hover: (_item, monitor) => {
+			accept: [TAB_DRAG_TYPE, PANE_DRAG_TYPE],
+			hover: (_item: TabDragItem | PaneDragItem, monitor) => {
 				const track = tabsTrackRef.current;
 				const offset = monitor.getClientOffset();
 				if (!track || !offset) return;
@@ -103,9 +109,21 @@ export function TabBar<TData>({
 					setInsertIndex(idx);
 				}
 			},
-			drop: (item: { tabId: string }) => {
+			drop: (item: TabDragItem | PaneDragItem, monitor) => {
 				const idx = insertIndexRef.current;
 				if (idx === null) return;
+
+				insertIndexRef.current = null;
+				setInsertIndex(null);
+
+				if (monitor.getItemType() === PANE_DRAG_TYPE && "paneId" in item) {
+					onMovePaneToNewTab(item.paneId, idx);
+					return;
+				}
+
+				if (monitor.getItemType() !== TAB_DRAG_TYPE || !("tabId" in item)) {
+					return;
+				}
 
 				const dragIndex = tabs.findIndex((t) => t.id === item.tabId);
 				if (dragIndex === -1) return;
@@ -114,15 +132,13 @@ export function TabBar<TData>({
 				let toIndex = idx;
 				if (dragIndex < toIndex) toIndex--;
 
-				insertIndexRef.current = null;
-				setInsertIndex(null);
 				onReorderTab(item.tabId, toIndex);
 			},
 			collect: (monitor) => ({
 				isOver: monitor.isOver(),
 			}),
 		}),
-		[tabs, onReorderTab],
+		[tabs, onReorderTab, onMovePaneToNewTab],
 	);
 
 	// Clear indicator when cursor leaves the tab bar

@@ -18,7 +18,6 @@ import { HiChevronRight, HiOutlinePaperClip, HiXMark } from "react-icons/hi2";
 import { MarkdownEditor } from "renderer/components/MarkdownEditor";
 import { PLATFORM } from "renderer/hotkeys";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
-import { TaskMarkdownRenderer } from "renderer/routes/_authenticated/_dashboard/tasks/$taskId/components/TaskMarkdownRenderer";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import { compareStatusesForDropdown } from "../../../../utils/sorting";

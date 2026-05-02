@@ -18,7 +18,7 @@ export default command({
 		if (!task) throw new CLIError(`Task not found: ${idOrSlug}`);
 
 		const result = await ctx.api.task.update.mutate({
-			id: task.id,
+			id: task.task.id,
 			title: options.title ?? undefined,
 			description: options.description ?? undefined,
 			priority: options.priority ?? undefined,
@@ -27,7 +27,7 @@ export default command({
 
 		return {
 			data: result.task,
-			message: `Updated task ${task.slug}`,
+			message: `Updated task ${task.task.slug}`,
 		};
 	},
 });

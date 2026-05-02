@@ -3,13 +3,10 @@ import { Link, useMatchRoute } from "@tanstack/react-router";
 import {
 	HiOutlineBeaker,
 	HiOutlineBell,
-	HiOutlineBuildingOffice2,
 	HiOutlineCommandLine,
 	HiOutlineComputerDesktop,
 	HiOutlineCpuChip,
-	HiOutlineCreditCard,
 	HiOutlineFolder,
-	HiOutlineKey,
 	HiOutlineLink,
 	HiOutlineLockClosed,
 	HiOutlinePaintBrush,
@@ -28,7 +25,6 @@ interface GeneralSettingsProps {
 
 type SettingsRoute =
 	| "/settings/account"
-	| "/settings/organization"
 	| "/settings/appearance"
 	| "/settings/ringtones"
 	| "/settings/keyboard"
@@ -40,8 +36,6 @@ type SettingsRoute =
 	| "/settings/models"
 	| "/settings/experimental"
 	| "/settings/integrations"
-	| "/settings/billing"
-	| "/settings/api-keys"
 	| "/settings/security"
 	| "/settings/permissions"
 	| "/settings/projects"
@@ -135,12 +129,6 @@ const SECTION_GROUPS: SectionGroup[] = [
 		label: "Organization",
 		items: [
 			{
-				id: "/settings/organization",
-				section: "organization",
-				label: "Organization",
-				icon: <HiOutlineBuildingOffice2 className="h-4 w-4" />,
-			},
-			{
 				id: "/settings/projects",
 				section: "project",
 				label: "Projects",
@@ -157,18 +145,6 @@ const SECTION_GROUPS: SectionGroup[] = [
 				section: "integrations",
 				label: "Integrations",
 				icon: <HiOutlinePuzzlePiece className="h-4 w-4" />,
-			},
-			{
-				id: "/settings/billing",
-				section: "billing",
-				label: "Billing",
-				icon: <HiOutlineCreditCard className="h-4 w-4" />,
-			},
-			{
-				id: "/settings/api-keys",
-				section: "apikeys",
-				label: "API Keys",
-				icon: <HiOutlineKey className="h-4 w-4" />,
 			},
 		],
 	},

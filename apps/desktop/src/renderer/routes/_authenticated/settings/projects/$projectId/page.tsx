@@ -2,8 +2,6 @@ import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { env } from "renderer/env.renderer";
-import { authClient } from "renderer/lib/auth-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { NotFound } from "renderer/routes/not-found";
 import { useSettingsSearchQuery } from "renderer/stores/settings-state";
@@ -22,12 +20,9 @@ export const Route = createFileRoute(
 function ProjectDetailPage() {
 	const { projectId } = Route.useParams();
 	const collections = useCollections();
-	const { data: session } = authClient.useSession();
 	const searchQuery = useSettingsSearchQuery();
 
-	const activeOrganizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+	const activeOrganizationId = MOCK_ORG_ID;
 
 	const { data: v2Match = [] } = useLiveQuery(
 		(q) =>

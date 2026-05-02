@@ -50,7 +50,6 @@ import {
 	LuTrash2,
 } from "react-icons/lu";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
-import { authClient } from "renderer/lib/auth-client";
 import { ProjectThumbnail } from "renderer/routes/_authenticated/components/ProjectThumbnail";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { AgentCell } from "./components/AgentCell";
@@ -71,8 +70,7 @@ type Scope = "mine" | "team";
 function AutomationsPage() {
 	const navigate = useNavigate();
 	const collections = useCollections();
-	const { data: session } = authClient.useSession();
-	const currentUserId = session?.user?.id;
+	const currentUserId = null;
 
 	const [createOpen, setCreateOpen] = useState(false);
 	const [initialTemplate, setInitialTemplate] =
@@ -180,7 +178,7 @@ function AutomationsPage() {
 			currentUserId
 				? automations.filter((a) => a.ownerUserId === currentUserId).length
 				: 0,
-		[automations, currentUserId],
+		[automations],
 	);
 	const teamCount = automations.length - mineCount;
 
@@ -189,7 +187,7 @@ function AutomationsPage() {
 		return scope === "mine"
 			? automations.filter((a) => a.ownerUserId === currentUserId)
 			: automations.filter((a) => a.ownerUserId !== currentUserId);
-	}, [automations, scope, currentUserId]);
+	}, [automations, scope]);
 
 	const handleSelectTemplate = (template: AutomationTemplate) => {
 		setInitialTemplate(template);

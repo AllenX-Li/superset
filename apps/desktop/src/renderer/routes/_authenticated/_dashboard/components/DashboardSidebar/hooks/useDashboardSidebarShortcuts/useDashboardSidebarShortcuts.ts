@@ -103,46 +103,6 @@ export function useDashboardSidebarShortcuts(
 		[workspaceLocations, toggleProjectCollapsed, toggleSectionCollapsed],
 	);
 
-	const workspaceLocations = useMemo(() => {
-		const map = new Map<string, WorkspaceLocation>();
-		for (const project of groups) {
-			for (const child of project.children) {
-				if (child.type === "workspace") {
-					map.set(child.workspace.id, {
-						projectId: project.id,
-						projectIsCollapsed: project.isCollapsed,
-						sectionId: null,
-						sectionIsCollapsed: false,
-					});
-					continue;
-				}
-				for (const workspace of child.section.workspaces) {
-					map.set(workspace.id, {
-						projectId: project.id,
-						projectIsCollapsed: project.isCollapsed,
-						sectionId: child.section.id,
-						sectionIsCollapsed: child.section.isCollapsed,
-					});
-				}
-			}
-		}
-		return map;
-	}, [groups]);
-
-	const revealWorkspace = useCallback(
-		(workspaceId: string) => {
-			const location = workspaceLocations.get(workspaceId);
-			if (!location) return;
-			if (location.projectIsCollapsed) {
-				toggleProjectCollapsed(location.projectId);
-			}
-			if (location.sectionId && location.sectionIsCollapsed) {
-				toggleSectionCollapsed(location.sectionId);
-			}
-		},
-		[workspaceLocations, toggleProjectCollapsed, toggleSectionCollapsed],
-	);
-
 	const switchToWorkspace = useCallback(
 		(index: number) => {
 			const workspace = flattenedWorkspaces[index];

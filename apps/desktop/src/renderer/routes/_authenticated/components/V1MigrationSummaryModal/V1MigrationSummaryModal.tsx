@@ -17,9 +17,7 @@ import {
 	LuLayoutGrid,
 	LuTriangle,
 } from "react-icons/lu";
-import { env } from "renderer/env.renderer";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
-import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { V1_MIGRATION_SUMMARY_EVENT } from "renderer/routes/_authenticated/hooks/useMigrateV1DataToV2";
 import { MOCK_ORG_ID } from "shared/constants";
@@ -100,10 +98,7 @@ function readSummary(organizationId: string): MigrationSummary | null {
 }
 
 export function V1MigrationSummaryModal() {
-	const { data: session } = authClient.useSession();
-	const organizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+	const organizationId = MOCK_ORG_ID;
 	const [summary, setSummary] = useState<MigrationSummary | null>(null);
 	const [modalUiState, setModalUiState] = useState<ModalUiState>(
 		INITIAL_MODAL_UI_STATE,
@@ -130,7 +125,7 @@ export function V1MigrationSummaryModal() {
 		return () => {
 			window.removeEventListener(V1_MIGRATION_SUMMARY_EVENT, onUpdate);
 		};
-	}, [organizationId]);
+	}, []);
 
 	const dismiss = () => {
 		if (organizationId) localStorage.removeItem(summaryKey(organizationId));

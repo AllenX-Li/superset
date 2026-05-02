@@ -3,7 +3,6 @@ import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useCallback, useMemo } from "react";
 import { apiTrpcClient } from "renderer/lib/api-trpc-client";
-import { authClient } from "renderer/lib/auth-client";
 import {
 	isDesktopChatDevMode,
 	resolveDesktopChatOrganizationId,
@@ -58,10 +57,7 @@ export function useWorkspaceChatController({
 	onSessionIdChange: (sessionId: string | null) => void;
 	workspaceId: string;
 }) {
-	const { data: session } = authClient.useSession();
-	const organizationId = resolveDesktopChatOrganizationId(
-		session?.session?.activeOrganizationId,
-	);
+	const organizationId = resolveDesktopChatOrganizationId(undefined);
 	const collections = useCollections();
 	const endSessionMutation = workspaceTrpc.chat.endSession.useMutation();
 	const { chatSessions: chatSessionActions } = useOptimisticCollectionActions();

@@ -2,8 +2,6 @@ import type { CheckItem } from "@superset/local-db";
 import { and, eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import { env } from "renderer/env.renderer";
-import { authClient } from "renderer/lib/auth-client";
 import {
 	DEVICE_FILTER_ALL,
 	DEVICE_FILTER_THIS_DEVICE,
@@ -217,14 +215,11 @@ export function useAccessibleV2Workspaces(
 	const searchQuery = options.searchQuery ?? "";
 	const deviceFilter = options.deviceFilter ?? DEVICE_FILTER_ALL;
 	const projectFilter = options.projectFilter ?? PROJECT_FILTER_ALL;
-	const { data: session } = authClient.useSession();
 	const collections = useCollections();
 	const { machineId } = useLocalHostService();
 
-	const activeOrganizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
-	const currentUserId = session?.user?.id ?? null;
+	const activeOrganizationId = MOCK_ORG_ID;
+	const currentUserId = null;
 
 	const { data: rows = [] } = useLiveQuery(
 		(q) =>
@@ -405,7 +400,7 @@ export function useAccessibleV2Workspaces(
 		return Array.from(deduped.values()).sort(
 			(a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
 		);
-	}, [rows, machineId, currentUserId, prsByRepoBranch]);
+	}, [rows, machineId, prsByRepoBranch]);
 
 	const searchFiltered = useMemo(
 		() =>

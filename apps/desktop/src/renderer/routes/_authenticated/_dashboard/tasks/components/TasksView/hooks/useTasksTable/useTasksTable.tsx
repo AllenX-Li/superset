@@ -86,7 +86,7 @@ export function useTasksTable({
 	const rowSelection = useRowSelectionStore((s) => s.rowSelection);
 	const setRowSelection = useRowSelectionStore((s) => s.setRowSelection);
 
-	const { data: taskRows, isLoading } = useQuery({
+	const { data: taskRows } = useQuery({
 		queryKey: ["tasks"],
 		queryFn: () => {
 			if (!activeHostUrl) return [];

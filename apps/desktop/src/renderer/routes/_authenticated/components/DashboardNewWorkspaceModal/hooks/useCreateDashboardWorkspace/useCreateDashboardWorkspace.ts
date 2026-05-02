@@ -1,7 +1,6 @@
 import { buildHostRoutingKey } from "@superset/shared/host-routing";
 import { useCallback } from "react";
 import { env } from "renderer/env.renderer";
-import { authClient } from "renderer/lib/auth-client";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { useLocalHostService } from "renderer/routes/_authenticated/providers/LocalHostServiceProvider";
 import type { WorkspaceHostTarget } from "../../components/DashboardNewWorkspaceForm/components/DevicePicker";
@@ -44,8 +43,7 @@ export interface CreateWorkspaceInput {
  */
 export function useCreateDashboardWorkspace() {
 	const { activeHostUrl } = useLocalHostService();
-	const { data: session } = authClient.useSession();
-	const activeOrganizationId = session?.session?.activeOrganizationId ?? null;
+	const activeOrganizationId = null;
 
 	return useCallback(
 		async (input: CreateWorkspaceInput) => {
@@ -70,6 +68,6 @@ export function useCreateDashboardWorkspace() {
 				linkedContext: input.linkedContext,
 			});
 		},
-		[activeHostUrl, activeOrganizationId],
+		[activeHostUrl],
 	);
 }

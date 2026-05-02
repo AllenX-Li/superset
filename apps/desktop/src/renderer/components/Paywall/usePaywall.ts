@@ -21,5 +21,6 @@ export function usePaywall() {
 		hasAccess,
 		gateFeature,
 		userPlan: "pro" as const,
+		isReady: true as const,
 	};
 }

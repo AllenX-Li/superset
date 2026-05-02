@@ -4,8 +4,6 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { HiMagnifyingGlass } from "react-icons/hi2";
-import { env } from "renderer/env.renderer";
-import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
 import { MOCK_ORG_ID } from "shared/constants";
@@ -24,12 +22,9 @@ export function ProjectsSettingsSidebar({
 	selectedProjectId,
 }: ProjectsSettingsSidebarProps) {
 	const collections = useCollections();
-	const { data: session } = authClient.useSession();
 	const [filter, setFilter] = useState("");
 
-	const activeOrganizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+	const activeOrganizationId = MOCK_ORG_ID;
 
 	const { data: groups = [] } =
 		electronTrpc.workspaces.getAllGrouped.useQuery();

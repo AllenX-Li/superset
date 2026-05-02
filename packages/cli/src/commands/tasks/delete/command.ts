@@ -16,7 +16,7 @@ export default command({
 					failed.push({ id: idOrSlug, reason: "not found" });
 					continue;
 				}
-				await ctx.api.task.delete.mutate(task.id);
+				await ctx.api.task.delete.mutate(task.task.id);
 				deleted.push(idOrSlug);
 			} catch (error) {
 				failed.push({

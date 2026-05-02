@@ -9,7 +9,6 @@ import { useEffect, useRef } from "react";
 import { DndProvider } from "react-dnd";
 import { NewWorkspaceModal } from "renderer/components/NewWorkspaceModal";
 import { useUpdateListener } from "renderer/components/UpdateToast";
-import { migrateHotkeyOverrides } from "renderer/hotkeys/migrate";
 import { dragDropManager } from "renderer/lib/dnd";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { showWorkspaceAutoNameWarningToast } from "renderer/lib/workspaces/showWorkspaceAutoNameWarningToast";
@@ -22,7 +21,6 @@ import { setPaneWorkspaceRunState } from "renderer/stores/tabs/workspace-run";
 import { useWorkspaceInitStore } from "renderer/stores/workspace-init";
 import { NOTIFICATION_EVENTS } from "shared/constants";
 import { AgentHooks } from "./components/AgentHooks";
-import { GlobalTerminalLifecycle } from "./components/GlobalTerminalLifecycle";
 import { TeardownLogsDialog } from "./components/TeardownLogsDialog";
 import { createPierreWorker } from "./lib/pierreWorker";
 import { CollectionsProvider } from "./providers/CollectionsProvider";
@@ -41,13 +39,6 @@ function AuthenticatedLayout() {
 
 	useAgentHookListener();
 	useUpdateListener();
-
-	// One-time migration from old hotkey storage to new localStorage-based store
-	useEffect(() => {
-		void migrateHotkeyOverrides().catch((error) => {
-			console.error("[hotkeys] Migration failed:", error);
-		});
-	}, []);
 
 	// Update workspace-run pane state on terminal exit
 	electronTrpc.notifications.subscribe.useSubscription(undefined, {
@@ -118,7 +109,6 @@ function AuthenticatedLayout() {
 	return (
 		<CollectionsProvider>
 			<DndProvider manager={dragDropManager}>
-				<GlobalTerminalLifecycle />
 				<LocalHostServiceProvider>
 					<WorkerPoolContextProvider
 						poolOptions={{ workerFactory: createPierreWorker, poolSize: 8 }}

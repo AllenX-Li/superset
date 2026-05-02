@@ -2,7 +2,6 @@ import { toast } from "@superset/ui/sonner";
 import { eq } from "@tanstack/db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import { authClient } from "renderer/lib/auth-client";
 import {
 	type PersistableTransaction,
 	useOptimisticCollectionActions,
@@ -30,8 +29,7 @@ interface HostSettingsProps {
 
 export function HostSettings({ hostId }: HostSettingsProps) {
 	const collections = useCollections();
-	const { data: session } = authClient.useSession();
-	const currentUserId = session?.user?.id ?? null;
+	const currentUserId = null;
 	const actions = useOptimisticCollectionActions();
 
 	const { data: hostRows = [] } = useLiveQuery(
@@ -118,7 +116,7 @@ export function HostSettings({ hostId }: HostSettingsProps) {
 		return (
 			hostUserRows.find((r) => r.userId === currentUserId)?.role === "owner"
 		);
-	}, [hostUserRows, currentUserId]);
+	}, [hostUserRows]);
 
 	if (!host) {
 		return (

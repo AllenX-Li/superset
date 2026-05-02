@@ -10,12 +10,12 @@ export default command({
 		if (!task) throw new CLIError(`Task not found: ${idOrSlug}`);
 
 		return {
-			data: task,
+			data: task.task,
 			message: [
-				`${task.slug}: ${task.title}`,
-				`Priority: ${task.priority ?? "—"}`,
-				`Branch:   ${task.branch ?? "—"}`,
-				task.description ? `\n${task.description}` : "",
+				`${task.task.slug}: ${task.task.title}`,
+				`Priority: ${task.task.priority ?? "—"}`,
+				`Branch:   ${task.task.branch ?? "—"}`,
+				task.task.description ? `\n${task.task.description}` : "",
 			]
 				.filter(Boolean)
 				.join("\n"),

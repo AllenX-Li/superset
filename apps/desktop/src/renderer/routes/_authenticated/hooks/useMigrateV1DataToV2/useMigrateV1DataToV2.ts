@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
-import { env } from "renderer/env.renderer";
 import { useIsV2CloudEnabled } from "renderer/hooks/useIsV2CloudEnabled";
-import { authClient } from "renderer/lib/auth-client";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
 import { electronTrpcClient } from "renderer/lib/trpc-client";
 import { useCollections } from "renderer/routes/_authenticated/providers/CollectionsProvider";
@@ -78,7 +76,6 @@ export function useMigrateV1DataToV2({
 }: {
 	autoRun?: boolean;
 } = {}) {
-	const { data: session } = authClient.useSession();
 	const { activeHostUrl } = useLocalHostService();
 	const { isV2CloudEnabled } = useIsV2CloudEnabled();
 	const collections = useCollections();
@@ -87,9 +84,7 @@ export function useMigrateV1DataToV2({
 		getMigrationRunningSnapshot,
 		getMigrationRunningSnapshot,
 	);
-	const organizationId = env.SKIP_ENV_VALIDATION
-		? MOCK_ORG_ID
-		: (session?.session?.activeOrganizationId ?? null);
+	const organizationId = MOCK_ORG_ID;
 	const attemptedRef = useRef<string | null>(null);
 
 	const runMigration = useCallback(
@@ -170,7 +165,7 @@ export function useMigrateV1DataToV2({
 				setMigrationRunning(false);
 			}
 		},
-		[activeHostUrl, collections, isV2CloudEnabled, organizationId],
+		[activeHostUrl, collections, isV2CloudEnabled],
 	);
 
 	useEffect(() => {
@@ -185,7 +180,7 @@ export function useMigrateV1DataToV2({
 		sessionStorage.removeItem(getAttemptKey(organizationId));
 		attemptedRef.current = null;
 		return runMigration({ manual: true });
-	}, [organizationId, runMigration]);
+	}, [runMigration]);
 
 	return { rerun, isRunning };
 }

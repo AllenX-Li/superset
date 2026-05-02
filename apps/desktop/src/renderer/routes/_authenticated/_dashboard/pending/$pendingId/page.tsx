@@ -7,7 +7,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { GoGitBranch } from "react-icons/go";
 import { HiCheck, HiExclamationTriangle } from "react-icons/hi2";
 import { useHostTargetUrl } from "renderer/hooks/host-service/useHostTargetUrl";
-import { authClient } from "renderer/lib/auth-client";
 import { electronTrpc } from "renderer/lib/electron-trpc";
 import { formatRelativeTime } from "renderer/lib/formatRelativeTime";
 import { getHostServiceClientByUrl } from "renderer/lib/host-service-client";
@@ -60,8 +59,7 @@ function useFireIntent(pendingId: string, pending: PendingWorkspaceRow | null) {
 	const trpcUtils = electronTrpc.useUtils();
 	const { activeHostUrl } = useLocalHostService();
 	const hostUrl = useHostTargetUrl(pending?.hostTarget ?? null);
-	const { data: session } = authClient.useSession();
-	const activeOrganizationId = session?.session?.activeOrganizationId ?? null;
+	const activeOrganizationId = null;
 	const { ensureWorkspaceInSidebar } = useDashboardSidebarState();
 
 	const fire = useCallback(async () => {
@@ -213,7 +211,6 @@ function useFireIntent(pendingId: string, pending: PendingWorkspaceRow | null) {
 		pendingId,
 		trpcUtils,
 		activeHostUrl,
-		activeOrganizationId,
 		hostUrl,
 	]);
 

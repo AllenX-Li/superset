@@ -1,6 +1,8 @@
 import type {
 	SelectAgentCommand,
 	SelectApikey,
+	SelectAutomation,
+	SelectAutomationRun,
 	SelectChatSession,
 	SelectGithubPullRequest,
 	SelectGithubRepository,
@@ -9,7 +11,6 @@ import type {
 	SelectMember,
 	SelectOrganization,
 	SelectProject,
-	SelectSessionHost,
 	SelectSubscription,
 	SelectTask,
 	SelectTaskStatus,
@@ -38,7 +39,9 @@ import {
 	type PendingWorkspaceRow,
 	pendingWorkspaceSchema,
 	type V2TerminalPresetRow,
+	type V2UserPreferencesRow,
 	v2TerminalPresetSchema,
+	v2UserPreferencesSchema,
 	type WorkspaceLocalStateRow,
 	workspaceLocalStateSchema,
 } from "./dashboardSidebarLocal";
@@ -100,13 +103,21 @@ export interface OrgCollections {
 	subscriptions: Collection<SelectSubscription>;
 	apiKeys: Collection<SelectApikey>;
 	chatSessions: Collection<SelectChatSession>;
-	sessionHosts: Collection<SelectSessionHost>;
 	githubRepositories: Collection<SelectGithubRepository>;
 	githubPullRequests: Collection<SelectGithubPullRequest>;
 	organizations: Collection<SelectOrganization>;
+	automations: Collection<SelectAutomation>;
+	automationRuns: Collection<SelectAutomationRun>;
+	v2UserPreferences: Collection<
+		V2UserPreferencesRow,
+		"preferences",
+		LocalStorageCollectionUtils,
+		typeof v2UserPreferencesSchema,
+		z.input<typeof v2UserPreferencesSchema>
+	>;
 }
 
-const stubCollection = <T extends { id: string }>(id: string) =>
+const stubCollection = <T extends object>(id: string) =>
 	createCollection(
 		localStorageCollectionOptions({
 			id,
@@ -162,6 +173,15 @@ export function getCollections(_organizationId: string): OrgCollections {
 		}),
 	);
 
+	const v2UserPreferences = createCollection(
+		localStorageCollectionOptions({
+			id: `v2_user_preferences-${LOCAL_ORG_ID}`,
+			storageKey: `v2-user-preferences-${LOCAL_ORG_ID}`,
+			schema: v2UserPreferencesSchema,
+			getKey: (item) => item.id,
+		}),
+	);
+
 	return {
 		tasks: stubCollection<SelectTask>("tasks"),
 		taskStatuses: stubCollection<SelectTaskStatus>("task_statuses"),
@@ -182,7 +202,6 @@ export function getCollections(_organizationId: string): OrgCollections {
 		subscriptions: stubCollection<SelectSubscription>("subscriptions"),
 		apiKeys: stubCollection<SelectApikey>("api_keys"),
 		chatSessions: stubCollection<SelectChatSession>("chat_sessions"),
-		sessionHosts: stubCollection<SelectSessionHost>("session_hosts"),
 		githubRepositories: stubCollection<SelectGithubRepository>(
 			"github_repositories",
 		),
@@ -190,11 +209,14 @@ export function getCollections(_organizationId: string): OrgCollections {
 			"github_pull_requests",
 		),
 		organizations: stubCollection<SelectOrganization>("organizations"),
+		automations: stubCollection<SelectAutomation>("automations"),
+		automationRuns: stubCollection<SelectAutomationRun>("automation_runs"),
 		v2SidebarProjects,
 		v2WorkspaceLocalState,
 		v2SidebarSections,
 		v2TerminalPresets,
 		pendingWorkspaces,
+		v2UserPreferences,
 	};
 }
 
