@@ -95,3 +95,20 @@ git commit -m "chore: record upstream sync $(date +%Y%m%d)"
 - Never `--ours` or `--theirs` blindly — read the conflict before deciding
 - For complex UU conflicts touching both fork logic and upstream features, spawn a subagent to manually merge both sides
 - After resolving all conflicts, run `bun run typecheck` and `bun run lint` before committing
+
+---
+
+## After a Stable Sync — Release
+
+Once the sync is verified (typecheck + lint clean, app starts), cut a release so both machines get the update:
+
+```bash
+# 1. Bump version in apps/desktop/package.json if needed
+# 2. Tag and push
+git tag desktop-v<version>
+git push origin desktop-v<version>
+```
+
+GitHub Actions builds the DMG automatically (~20 min). When done, go to
+`github.com/AllenX-Li/superset/releases` and publish the Draft release.
+Both machines will pick up the update within 4 hours.
